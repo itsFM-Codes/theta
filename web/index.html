@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Theta</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <button class="brand" id="reset" aria-label="Reset board">
+          theta
+        </button>
+
+        <nav class="mode-menu" aria-label="Mode">
+          <button class="mode active" data-mode="play">Play</button>
+          <button class="mode" data-mode="editor">Editor</button>
+          <button class="mode" data-mode="analysis">Analysis</button>
+        </nav>
+
+        <button class="flip" id="flip" aria-label="Flip board">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 11a8 8 0 0 0-14.9-4.1L3 9m0-5v5h5M4 13a8 8 0 0 0 14.9 4.1L21 15m0 5v-5h-5"/>
+          </svg>
+        </button>
+      </header>
+
+      <section class="workspace">
+        <div class="evaluation" aria-label="Evaluation">
+          <div id="eval-fill"></div>
+          <span id="eval-label">+0.18</span>
+        </div>
+
+        <div class="board-wrap">
+          <div class="board" id="board" aria-label="Chess board"></div>
+        </div>
+
+        <aside class="panel" id="side-panel">
+          <div class="engine-state">
+            <span id="depth">Depth 14</span>
+          </div>
+
+          <ol class="lines" id="lines"></ol>
+
+          <div class="editor-tools" id="editor-tools" hidden>
+            <div class="piece-tray" id="piece-tray"></div>
+            <button id="clear">Clear</button>
+            <button id="start">Start</button>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
