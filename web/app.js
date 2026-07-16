@@ -72,6 +72,37 @@ function moveToSquare(row, column) {
   return legalMoves.find(move => move.to === name);
 }
 
+function castlingMoveForRook(row, column) {
+  if (!selectedSquare || (column !== 0 && column !== 7)) {
+    return null;
+  }
+
+  const king = board[selectedSquare.row][selectedSquare.column];
+  const rook = board[row][column];
+  const piecesHaveSameColor =
+    (king === king.toUpperCase()) === (rook === rook.toUpperCase());
+
+  if (king.toLowerCase() !== 'k' ||
+      rook.toLowerCase() !== 'r' ||
+      row !== selectedSquare.row ||
+      !piecesHaveSameColor) {
+    return null;
+  }
+
+  const castleFlag = column === 7
+    ? MOVE_FLAG_CASTLE_KINGSIDE
+    : MOVE_FLAG_CASTLE_QUEENSIDE;
+
+  return legalMoves.find(move => move.flags & castleFlag);
+}
+
+function clearSelection() {
+  selectedSquare = null;
+  legalMoves = [];
+  moveRequestNumber++;
+  renderBoard();
+}
+
 function getSquareClass(row, column) {
   const color = (row + column) % 2 === 0 ? 'light' : 'dark';
   const classes = ['square', color];
@@ -346,9 +377,20 @@ async function handleSquareClick(event) {
     return;
   }
 
+  if (isSelected(row, column)) {
+    clearSelection();
+    return;
+  }
+
   const targetMove = moveToSquare(row, column);
   if (selectedSquare && targetMove) {
     applyLegalMove(targetMove);
+    return;
+  }
+
+  const castlingMove = castlingMoveForRook(row, column);
+  if (castlingMove) {
+    applyLegalMove(castlingMove);
     return;
   }
 
@@ -356,10 +398,7 @@ async function handleSquareClick(event) {
   if (canSelectPiece(piece)) {
     await requestLegalMoves(row, column);
   } else {
-    selectedSquare = null;
-    legalMoves = [];
-    moveRequestNumber++;
-    renderBoard();
+    clearSelection();
   }
 }
 
