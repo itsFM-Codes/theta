@@ -39,6 +39,12 @@ let enPassantSquare = '-';
 let halfmoveClock = 0;
 let fullmoveNumber = 1;
 let moveRequestNumber = 0;
+let moveHistory = [];
+let positionHistory = [];
+let historyIndex = 0;
+let dragMoveRequest = null;
+let dragMoveApplied = false;
+let dragDropPending = false;
 
 function createStartingPosition() {
   return STARTING_POSITION.map(row => [...row]);
@@ -49,7 +55,7 @@ function renderPiece(piece) {
   const type = piece.toUpperCase();
   const source = `assets/cburnett/${color}${type}.svg`;
 
-  return `<img class="piece" src="${source}" alt="" draggable="false">`;
+  return `<img class="piece" src="${source}" alt="" draggable="true">`;
 }
 
 function squareName(row, column) {
@@ -101,6 +107,15 @@ function clearSelection() {
   legalMoves = [];
   moveRequestNumber++;
   renderBoard();
+}
+
+function refreshSquareClasses() {
+  for (const square of boardElement.querySelectorAll('.square')) {
+    const row = Number(square.dataset.row);
+    const column = Number(square.dataset.column);
+
+    square.className = getSquareClass(row, column);
+  }
 }
 
 function getSquareClass(row, column) {
@@ -167,6 +182,15 @@ function renderBoard() {
 
     addCoordinates(square, row, column);
     square.addEventListener('click', handleSquareClick);
+    square.addEventListener('dragover', handleSquareDragOver);
+    square.addEventListener('drop', handleSquareDrop);
+
+    const pieceElement = square.querySelector('.piece');
+    if (pieceElement) {
+      pieceElement.addEventListener('dragstart', handlePieceDragStart);
+      pieceElement.addEventListener('dragend', handlePieceDragEnd);
+    }
+
     boardElement.append(square);
   }
 }
@@ -212,6 +236,120 @@ function currentFen() {
   ].join(' ');
 }
 
+function capturePosition() {
+  return {
+    board: board.map(row => [...row]),
+    sideToMove,
+    castlingRights,
+    enPassantSquare,
+    halfmoveClock,
+    fullmoveNumber
+  };
+}
+
+function restorePosition(position) {
+  board = position.board.map(row => [...row]);
+  sideToMove = position.sideToMove;
+  castlingRights = position.castlingRights;
+  enPassantSquare = position.enPassantSquare;
+  halfmoveClock = position.halfmoveClock;
+  fullmoveNumber = position.fullmoveNumber;
+}
+
+function moveNotation(move, piece) {
+  if (move.flags & MOVE_FLAG_CASTLE_KINGSIDE) {
+    return 'O-O';
+  }
+
+  if (move.flags & MOVE_FLAG_CASTLE_QUEENSIDE) {
+    return 'O-O-O';
+  }
+
+  const isPawn = piece.toLowerCase() === 'p';
+  const isCapture = Boolean(move.flags & MOVE_FLAG_CAPTURE);
+  let notation = '';
+
+  if (isPawn) {
+    if (isCapture) {
+      notation += `${move.from[0]}x`;
+    }
+  } else {
+    notation += piece.toUpperCase();
+    if (isCapture) {
+      notation += 'x';
+    }
+  }
+
+  notation += move.to;
+
+  if (move.flags & MOVE_FLAG_PROMOTION) {
+    notation += `=${move.promotion.toUpperCase()}`;
+  }
+
+  return notation;
+}
+
+function renderMoveHistory() {
+  const historyElement = document.querySelector('#move-history');
+  const rows = [];
+
+  for (let index = 0; index < moveHistory.length; index += 2) {
+    const moveNumber = Math.floor(index / 2) + 1;
+    const whiteMove = moveHistory[index];
+    const blackMove = moveHistory[index + 1];
+
+    rows.push([
+      '<div class="move-row">',
+      `<span class="move-number">${moveNumber}.</span>`,
+      `<button class="history-move${historyIndex === index + 1 ? ' active' : ''}" data-history-index="${index + 1}">${whiteMove.notation}</button>`,
+      blackMove
+        ? `<button class="history-move${historyIndex === index + 2 ? ' active' : ''}" data-history-index="${index + 2}">${blackMove.notation}</button>`
+        : '<span></span>',
+      '</div>'
+    ].join(''));
+  }
+
+  historyElement.innerHTML = rows.join('');
+
+  for (const button of historyElement.querySelectorAll('.history-move')) {
+    button.addEventListener('click', () => {
+      goToHistory(Number(button.dataset.historyIndex));
+    });
+  }
+
+  document.querySelector('#first-move').disabled = historyIndex === 0;
+  document.querySelector('#previous-move').disabled = historyIndex === 0;
+  document.querySelector('#next-move').disabled = historyIndex === moveHistory.length;
+  document.querySelector('#last-move').disabled = historyIndex === moveHistory.length;
+
+  const activeMove = historyElement.querySelector('.history-move.active');
+  if (activeMove) {
+    activeMove.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function resetHistory() {
+  moveHistory = [];
+  positionHistory = [capturePosition()];
+  historyIndex = 0;
+  renderMoveHistory();
+}
+
+function goToHistory(index) {
+  if (index < 0 || index >= positionHistory.length) {
+    return;
+  }
+
+  historyIndex = index;
+  restorePosition(positionHistory[index]);
+  selectedSquare = null;
+  legalMoves = [];
+  moveRequestNumber++;
+  renderBoard();
+  renderMoveHistory();
+  refreshAnalysis();
+}
+
 function canSelectPiece(piece) {
   if (piece === '.') {
     return false;
@@ -221,13 +359,17 @@ function canSelectPiece(piece) {
   return sideToMove === 'white' ? isWhitePiece : !isWhitePiece;
 }
 
-async function requestLegalMoves(row, column) {
+async function requestLegalMoves(row, column, preserveBoard = false) {
   const requestNumber = ++moveRequestNumber;
   const from = squareName(row, column);
 
   selectedSquare = { row, column };
   legalMoves = [];
-  renderBoard();
+  if (preserveBoard) {
+    refreshSquareClasses();
+  } else {
+    renderBoard();
+  }
 
   try {
     const response = await fetch('/api/moves', {
@@ -248,16 +390,93 @@ async function requestLegalMoves(row, column) {
     }
 
     legalMoves = result.moves.filter(move => move.from === from);
-    renderBoard();
+    if (preserveBoard) {
+      refreshSquareClasses();
+    } else {
+      renderBoard();
+    }
   } catch (error) {
     if (requestNumber === moveRequestNumber) {
       selectedSquare = null;
       legalMoves = [];
-      renderBoard();
+
+      if (preserveBoard) {
+        refreshSquareClasses();
+      } else {
+        renderBoard();
+      }
     }
 
     console.error(error);
   }
+}
+
+function handlePieceDragStart(event) {
+  const square = event.currentTarget.closest('.square');
+  const row = Number(square.dataset.row);
+  const column = Number(square.dataset.column);
+  const piece = board[row][column];
+
+  if (currentMode === 'editor' || !canSelectPiece(piece)) {
+    event.preventDefault();
+    return;
+  }
+
+  dragMoveApplied = false;
+  dragDropPending = false;
+  event.currentTarget.classList.add('dragging');
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', squareName(row, column));
+  dragMoveRequest = requestLegalMoves(row, column, true);
+}
+
+function handlePieceDragEnd(event) {
+  event.currentTarget.classList.remove('dragging');
+
+  if (dragDropPending) {
+    return;
+  }
+
+  if (!dragMoveApplied) {
+    clearSelection();
+  }
+
+  dragMoveRequest = null;
+  dragMoveApplied = false;
+}
+
+function handleSquareDragOver(event) {
+  if (dragMoveRequest) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }
+}
+
+async function handleSquareDrop(event) {
+  if (!dragMoveRequest) {
+    return;
+  }
+
+  event.preventDefault();
+  dragDropPending = true;
+  await dragMoveRequest;
+
+  const row = Number(event.currentTarget.dataset.row);
+  const column = Number(event.currentTarget.dataset.column);
+  const targetMove = moveToSquare(row, column);
+  const castlingMove = castlingMoveForRook(row, column);
+  const move = targetMove || castlingMove;
+
+  if (move) {
+    dragMoveApplied = true;
+    applyLegalMove(move);
+  } else {
+    clearSelection();
+  }
+
+  dragMoveRequest = null;
+  dragMoveApplied = false;
+  dragDropPending = false;
 }
 
 function removeCastlingRights(rights) {
@@ -307,6 +526,12 @@ function applyLegalMove(move) {
   const target = squareCoordinates(move.to);
   const piece = board[source.row][source.column];
   const capturedPiece = board[target.row][target.column];
+  const notation = moveNotation(move, piece);
+
+  if (historyIndex < moveHistory.length) {
+    moveHistory = moveHistory.slice(0, historyIndex);
+    positionHistory = positionHistory.slice(0, historyIndex + 1);
+  }
 
   updateCastlingRights(piece, move.from, move.to, capturedPiece);
 
@@ -355,7 +580,12 @@ function applyLegalMove(move) {
   legalMoves = [];
   moveRequestNumber++;
 
+  moveHistory.push({ notation });
+  positionHistory.push(capturePosition());
+  historyIndex = moveHistory.length;
+
   renderBoard();
+  renderMoveHistory();
   refreshAnalysis();
 }
 
@@ -365,6 +595,7 @@ function handleEditorClick(row, column) {
   legalMoves = [];
   castlingRights = '';
   enPassantSquare = '-';
+  resetHistory();
   renderBoard();
 }
 
@@ -418,7 +649,12 @@ function refreshAnalysis() {
   linesElement.innerHTML = DEMO_LINES
     .map(([score, moves], index) => {
       const displayedScore = index === 0 ? evaluationLabel : score;
-      return `<li data-eval="${displayedScore}">${moves}</li>`;
+      return [
+        '<li>',
+        `<span class="line-eval">${displayedScore}</span>`,
+        `<span class="line-moves">${moves}</span>`,
+        '</li>'
+      ].join('');
     })
     .join('');
 }
@@ -479,6 +715,7 @@ function resetBoard() {
   selectedSquare = null;
   legalMoves = [];
   moveRequestNumber++;
+  resetHistory();
   renderBoard();
   refreshAnalysis();
 }
@@ -492,6 +729,7 @@ function clearBoard() {
   selectedSquare = null;
   legalMoves = [];
   moveRequestNumber++;
+  resetHistory();
   renderBoard();
 }
 
@@ -507,7 +745,32 @@ document.querySelector('#flip').addEventListener('click', () => {
 document.querySelector('#reset').addEventListener('click', resetBoard);
 document.querySelector('#clear').addEventListener('click', clearBoard);
 document.querySelector('#start').addEventListener('click', resetBoard);
+document.querySelector('#first-move').addEventListener('click', () => {
+  goToHistory(0);
+});
+document.querySelector('#previous-move').addEventListener('click', () => {
+  goToHistory(historyIndex - 1);
+});
+document.querySelector('#next-move').addEventListener('click', () => {
+  goToHistory(historyIndex + 1);
+});
+document.querySelector('#last-move').addEventListener('click', () => {
+  goToHistory(moveHistory.length);
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'ArrowLeft') {
+    goToHistory(historyIndex - 1);
+  } else if (event.key === 'ArrowRight') {
+    goToHistory(historyIndex + 1);
+  } else if (event.key === 'Home') {
+    goToHistory(0);
+  } else if (event.key === 'End') {
+    goToHistory(moveHistory.length);
+  }
+});
 
 renderEditorTray();
+resetHistory();
 renderBoard();
 refreshAnalysis();

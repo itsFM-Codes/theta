@@ -168,6 +168,12 @@ button {
   height: 88%;
   object-fit: contain;
   filter: drop-shadow(0 2px 1px #0004);
+  cursor: grab;
+}
+
+.square .piece.dragging {
+  opacity: 0.55;
+  cursor: grabbing;
 }
 
 .coord {
@@ -222,6 +228,8 @@ button {
 }
 
 .panel {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   padding: 14px;
   border-radius: 5px;
@@ -232,7 +240,7 @@ button {
 .engine-state {
   display: flex;
   align-items: center;
-  padding: 4px 4px 14px;
+  padding: 2px 4px 9px;
   color: var(--text-muted);
   font-size: 12px;
 }
@@ -240,29 +248,111 @@ button {
 .lines {
   margin: 0;
   padding: 0;
+  overflow: hidden;
   list-style: none;
-  counter-reset: principal-variation;
 }
 
 .lines li {
   display: grid;
-  grid-template-columns: 44px 1fr;
-  align-items: baseline;
-  gap: 10px;
-  padding: 13px 10px;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  height: 36px;
+  gap: 8px;
+  padding: 0 8px;
   border-top: 1px solid #3b3936;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 13px;
+  font-size: 12px;
 }
 
-.lines li::before {
-  content: counter(principal-variation) ". " attr(data-eval);
+.line-eval {
   color: #b7d88d;
-  counter-increment: principal-variation;
+  font-weight: 700;
+}
+
+.line-moves {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lines li:first-child {
   background: #33312e;
+}
+
+.move-history {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  border-top: 1px solid #3b3936;
+}
+
+.move-row {
+  display: grid;
+  grid-template-columns: 38px 1fr 1fr;
+  min-height: 36px;
+}
+
+.move-number {
+  padding: 9px 8px;
+  color: #77736e;
+  font-size: 12px;
+  text-align: right;
+}
+
+.history-move {
+  padding: 8px 10px;
+  border-radius: 0;
+  background: transparent;
+  color: #d5d2cc;
+  font-weight: 650;
+  text-align: left;
+}
+
+.history-move:hover {
+  background: #34322f;
+}
+
+.history-move.active {
+  background: #4b682f;
+  color: #fff;
+}
+
+.move-controls {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 12px -14px -14px;
+  border-top: 1px solid #3b3936;
+}
+
+.move-controls button {
+  display: grid;
+  place-items: center;
+  height: 48px;
+  border-radius: 0;
+  background: transparent;
+  color: #aaa;
+}
+
+.move-controls button:hover:not(:disabled) {
+  background: #33312e;
+  color: #fff;
+}
+
+.move-controls button:disabled {
+  color: #55524e;
+  cursor: default;
+}
+
+.move-controls svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+}
+
+.panel.editing .lines,
+.panel.editing .move-history,
+.panel.editing .move-controls {
+  display: none;
 }
 
 .editor-tools {

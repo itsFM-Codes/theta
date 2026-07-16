@@ -44,6 +44,31 @@
 
           <ol class="lines" id="lines"></ol>
 
+          <div class="move-history" id="move-history"></div>
+
+          <div class="move-controls" id="move-controls">
+            <button id="first-move" aria-label="First position">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 5v14M18 5l-8 7 8 7z"/>
+              </svg>
+            </button>
+            <button id="previous-move" aria-label="Previous move">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m15 5-8 7 8 7z"/>
+              </svg>
+            </button>
+            <button id="next-move" aria-label="Next move">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m9 5 8 7-8 7z"/>
+              </svg>
+            </button>
+            <button id="last-move" aria-label="Last position">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M18 5v14M6 5l8 7-8 7z"/>
+              </svg>
+            </button>
+          </div>
+
           <div class="editor-tools" id="editor-tools" hidden>
             <div class="piece-tray" id="piece-tray"></div>
             <button id="clear">Clear</button>
