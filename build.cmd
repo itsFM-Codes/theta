@@ -48,12 +48,42 @@ echo [BUILD] movegen_test
     tests\movegen_test.cpp ^
     src\chess\board.cpp ^
     src\chess\position.cpp ^
+    src\chess\move.cpp ^
     src\chess\movegen.cpp ^
     -o build\movegen_test.exe
 if errorlevel 1 exit /b 1
 
 echo [TEST]  movegen_test
 build\movegen_test.exe
+if errorlevel 1 exit /b 1
+
+echo [BUILD] legal_movegen_test
+%CXX% %CXXFLAGS% ^
+    tests\legal_movegen_test.cpp ^
+    src\chess\board.cpp ^
+    src\chess\position.cpp ^
+    src\chess\move.cpp ^
+    src\chess\movegen.cpp ^
+    -o build\legal_movegen_test.exe
+if errorlevel 1 exit /b 1
+
+echo [TEST]  legal_movegen_test
+build\legal_movegen_test.exe
+if errorlevel 1 exit /b 1
+
+echo [BUILD] fen_test
+%CXX% %CXXFLAGS% ^
+    tests\fen_test.cpp ^
+    src\chess\board.cpp ^
+    src\chess\position.cpp ^
+    src\chess\fen.cpp ^
+    src\chess\move.cpp ^
+    src\chess\movegen.cpp ^
+    -o build\fen_test.exe
+if errorlevel 1 exit /b 1
+
+echo [TEST]  fen_test
+build\fen_test.exe
 if errorlevel 1 exit /b 1
 
 set "ENGINE_SOURCES="

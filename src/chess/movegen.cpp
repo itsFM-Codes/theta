@@ -363,3 +363,294 @@ void generate_moves(const Position *position, MoveList *moves) {
         }
     }
 }
+
+int find_king(const Position *position, Color color) {
+    Piece king;
+    int square;
+
+    if (position == 0) {
+        return NO_SQUARE;
+    }
+
+    if (color == COLOR_WHITE) {
+        king = PIECE_WHITE_KING;
+    } else if (color == COLOR_BLACK) {
+        king = PIECE_BLACK_KING;
+    } else {
+        return NO_SQUARE;
+    }
+
+    for (square = 0; square < SQUARE_COUNT; ++square) {
+        if (position_piece_at(position, square) == king) {
+            return square;
+        }
+    }
+
+    return NO_SQUARE;
+}
+
+static int is_attacked_by_slider(
+    const Position *position,
+    int square,
+    Color attacking_color,
+    const int directions[][2],
+    int direction_count,
+    PieceType first_type,
+    PieceType second_type
+) {
+    int start_row = square_row(square);
+    int start_column = square_column(square);
+    int direction_index;
+
+    for (direction_index = 0;
+         direction_index < direction_count;
+         ++direction_index) {
+        int row = start_row + directions[direction_index][0];
+        int column = start_column + directions[direction_index][1];
+
+        while (is_valid_coordinate(row, column)) {
+            Piece piece = position_piece_at_coordinates(
+                position,
+                row,
+                column
+            );
+
+            if (piece != PIECE_NONE) {
+                if (piece_color(piece) == attacking_color &&
+                    (piece_type(piece) == first_type ||
+                     piece_type(piece) == second_type)) {
+                    return 1;
+                }
+
+                break;
+            }
+
+            row += directions[direction_index][0];
+            column += directions[direction_index][1];
+        }
+    }
+
+    return 0;
+}
+
+int is_square_attacked(
+    const Position *position,
+    int square,
+    Color attacking_color
+) {
+    static const int KNIGHT_OFFSETS[8][2] = {
+        {-2, -1},
+        {-2, 1},
+        {-1, -2},
+        {-1, 2},
+        {1, -2},
+        {1, 2},
+        {2, -1},
+        {2, 1}
+    };
+    static const int BISHOP_DIRECTIONS[4][2] = {
+        {-1, -1},
+        {-1, 1},
+        {1, -1},
+        {1, 1}
+    };
+    static const int ROOK_DIRECTIONS[4][2] = {
+        {-1, 0},
+        {1, 0},
+        {0, -1},
+        {0, 1}
+    };
+    int row;
+    int column;
+    int pawn_row;
+    int offset;
+    int row_offset;
+    int column_offset;
+    Piece pawn;
+    Piece knight;
+    Piece king;
+
+    if (position == 0 ||
+        !is_valid_square(square) ||
+        attacking_color == COLOR_NONE) {
+        return 0;
+    }
+
+    row = square_row(square);
+    column = square_column(square);
+
+    if (attacking_color == COLOR_WHITE) {
+        pawn = PIECE_WHITE_PAWN;
+        knight = PIECE_WHITE_KNIGHT;
+        king = PIECE_WHITE_KING;
+        pawn_row = row + 1;
+    } else {
+        pawn = PIECE_BLACK_PAWN;
+        knight = PIECE_BLACK_KNIGHT;
+        king = PIECE_BLACK_KING;
+        pawn_row = row - 1;
+    }
+
+    // Check pawn attacks
+    for (offset = -1; offset <= 1; offset += 2) {
+        if (position_piece_at_coordinates(
+                position,
+                pawn_row,
+                column + offset
+            ) == pawn) {
+            return 1;
+        }
+    }
+
+    // Check knight attacks
+    for (offset = 0; offset < 8; ++offset) {
+        if (position_piece_at_coordinates(
+                position,
+                row + KNIGHT_OFFSETS[offset][0],
+                column + KNIGHT_OFFSETS[offset][1]
+            ) == knight) {
+            return 1;
+        }
+    }
+
+    // Check diagonal and straight sliding attacks
+    if (is_attacked_by_slider(
+            position,
+            square,
+            attacking_color,
+            BISHOP_DIRECTIONS,
+            4,
+            PIECE_TYPE_BISHOP,
+            PIECE_TYPE_QUEEN
+        )) {
+        return 1;
+    }
+
+    if (is_attacked_by_slider(
+            position,
+            square,
+            attacking_color,
+            ROOK_DIRECTIONS,
+            4,
+            PIECE_TYPE_ROOK,
+            PIECE_TYPE_QUEEN
+        )) {
+        return 1;
+    }
+
+    // Check king attacks
+    for (row_offset = -1; row_offset <= 1; ++row_offset) {
+        for (column_offset = -1;
+             column_offset <= 1;
+             ++column_offset) {
+            if (row_offset == 0 && column_offset == 0) {
+                continue;
+            }
+
+            if (position_piece_at_coordinates(
+                    position,
+                    row + row_offset,
+                    column + column_offset
+                ) == king) {
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+static int is_castling_path_safe(
+    const Position *position,
+    Move move,
+    Color moving_color
+) {
+    Position transit_position;
+    Color attacking_color = opposite_color(moving_color);
+    int row = square_row(move.from);
+    int transit_column;
+    int transit_square;
+
+    if (is_square_attacked(
+            position,
+            move.from,
+            attacking_color
+        )) {
+        return 0;
+    }
+
+    if (move.flags & MOVE_FLAG_CASTLE_KINGSIDE) {
+        transit_column = 5;
+    } else {
+        transit_column = 3;
+    }
+
+    transit_square = make_square(row, transit_column);
+    transit_position = *position;
+    position_set_piece(&transit_position, move.from, PIECE_NONE);
+    position_set_piece(
+        &transit_position,
+        transit_square,
+        position_piece_at(position, move.from)
+    );
+
+    return !is_square_attacked(
+        &transit_position,
+        transit_square,
+        attacking_color
+    );
+}
+
+void generate_legal_moves(Position *position, MoveList *moves) {
+    MoveList pseudo_moves;
+    Color moving_color;
+    int index;
+
+    if (moves == 0) {
+        return;
+    }
+
+    moves->count = 0;
+    if (position == 0) {
+        return;
+    }
+
+    moving_color = position->side_to_move;
+    if (!is_valid_square(find_king(position, moving_color))) {
+        return;
+    }
+
+    generate_moves(position, &pseudo_moves);
+
+    for (index = 0; index < pseudo_moves.count; ++index) {
+        Move move = pseudo_moves.moves[index];
+        UndoState undo;
+        int king_square;
+        int is_legal;
+
+        if (((move.flags & MOVE_FLAG_CASTLE_KINGSIDE) ||
+             (move.flags & MOVE_FLAG_CASTLE_QUEENSIDE)) &&
+            !is_castling_path_safe(position, move, moving_color)) {
+            continue;
+        }
+
+        if (!make_move(position, move, &undo)) {
+            continue;
+        }
+
+        king_square = find_king(position, moving_color);
+        is_legal = is_valid_square(king_square) &&
+                   !is_square_attacked(
+                       position,
+                       king_square,
+                       position->side_to_move
+                   );
+
+        undo_move(position, move, &undo);
+
+        if (is_legal && moves->count < MAX_MOVES) {
+            moves->moves[moves->count] = move;
+            moves->count++;
+        }
+    }
+}

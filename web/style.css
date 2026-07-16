@@ -141,6 +141,26 @@ button {
   background: #cdd26a99;
 }
 
+.square.move-target::after,
+.square.capture-target::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.square.move-target::after {
+  width: 24%;
+  height: 24%;
+  background: #1f1f1f55;
+}
+
+.square.capture-target::after {
+  inset: 7%;
+  border: clamp(4px, 0.55vw, 7px) solid #1f1f1f55;
+}
+
 .square .piece {
   position: relative;
   z-index: 1;
@@ -152,7 +172,7 @@ button {
 
 .coord {
   position: absolute;
-  z-index: 2;
+  z-index: 3;
   color: var(--square-dark);
   font: 800 clamp(9px, 1.1vw, 13px) ui-sans-serif;
   pointer-events: none;
