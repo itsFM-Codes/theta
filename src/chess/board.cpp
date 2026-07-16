@@ -1,55 +1,77 @@
-#include <stdio.h>
-#include "src/chess/board.h"
+#include "board.h"
 
-// Internal board representation
-static int board[BOARD_SIZE][BOARD_SIZE];
-static int colors[BOARD_SIZE][BOARD_SIZE];
-
-void init_board() {
-    // Initialize the board with starting positions
-    for (int i = 0; i < BOARD_SIZE; i++) {
-        for (int j = 0; j < BOARD_SIZE; j++) {
-            board[i][j] = EMPTY;
-            colors[i][j] = EMPTY;
-        }
-    }
+int is_valid_coordinate(int row, int column) {
+    return row >= 0 && row < BOARD_SIZE &&
+           column >= 0 && column < BOARD_SIZE;
 }
 
-void print_board() {
-    for (int i = 0; i < BOARD_SIZE; i++) {
-        for (int j = 0; j < BOARD_SIZE; j++) {
-            printf("%d ", board[i][j]);
-        }
-        printf("\n");
-    }
+int is_valid_square(int square) {
+    return square >= 0 && square < SQUARE_COUNT;
 }
 
-int is_valid_position(int row, int col) {
-    return (row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE);
+int make_square(int row, int column) {
+    if (!is_valid_coordinate(row, column)) {
+        return NO_SQUARE;
+    }
+
+    return row * BOARD_SIZE + column;
 }
 
-int get_piece(int row, int col) {
-    if (!is_valid_position(row, col)) {
-        return EMPTY;
-    }
-    return board[row][col];
+int square_row(int square) {
+    return is_valid_square(square) ? square / BOARD_SIZE : -1;
 }
 
-void set_piece(int row, int col, int piece) {
-    if (is_valid_position(row, col)) {
-        board[row][col] = piece;
-    }
+int square_column(int square) {
+    return is_valid_square(square) ? square % BOARD_SIZE : -1;
 }
 
-int get_color(int row, int col) {
-    if (!is_valid_position(row, col)) {
-        return EMPTY;
+Color piece_color(Piece piece) {
+    if (piece >= PIECE_WHITE_PAWN && piece <= PIECE_WHITE_KING) {
+        return COLOR_WHITE;
     }
-    return colors[row][col];
+
+    if (piece >= PIECE_BLACK_PAWN && piece <= PIECE_BLACK_KING) {
+        return COLOR_BLACK;
+    }
+
+    return COLOR_NONE;
 }
 
-void set_color(int row, int col, int color) {
-    if (is_valid_position(row, col)) {
-        colors[row][col] = color;
+Color opposite_color(Color color) {
+    if (color == COLOR_WHITE) {
+        return COLOR_BLACK;
     }
+
+    if (color == COLOR_BLACK) {
+        return COLOR_WHITE;
+    }
+
+    return COLOR_NONE;
+}
+
+PieceType piece_type(Piece piece) {
+    switch (piece) {
+        case PIECE_WHITE_PAWN:
+        case PIECE_BLACK_PAWN:
+            return PIECE_TYPE_PAWN;
+        case PIECE_WHITE_KNIGHT:
+        case PIECE_BLACK_KNIGHT:
+            return PIECE_TYPE_KNIGHT;
+        case PIECE_WHITE_BISHOP:
+        case PIECE_BLACK_BISHOP:
+            return PIECE_TYPE_BISHOP;
+        case PIECE_WHITE_ROOK:
+        case PIECE_BLACK_ROOK:
+            return PIECE_TYPE_ROOK;
+        case PIECE_WHITE_QUEEN:
+        case PIECE_BLACK_QUEEN:
+            return PIECE_TYPE_QUEEN;
+        case PIECE_WHITE_KING:
+        case PIECE_BLACK_KING:
+            return PIECE_TYPE_KING;
+        case PIECE_NONE:
+            return PIECE_TYPE_NONE;
+    }
+
+    return PIECE_TYPE_NONE;
 }

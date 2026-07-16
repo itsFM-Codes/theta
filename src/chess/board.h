@@ -1,29 +1,53 @@
 #ifndef BOARD_H
 #define BOARD_H
 
-// Board dimensions
+#include <stdint.h>
+
 #define BOARD_SIZE 8
+#define SQUARE_COUNT (BOARD_SIZE * BOARD_SIZE)
+#define NO_SQUARE (-1)
 
-// Piece types
-#define EMPTY 0
-#define PAWN 1
-#define ROOK 2
-#define KNIGHT 3
-#define BISHOP 4
-#define QUEEN 5
-#define KING 6
+typedef enum Color {
+    COLOR_WHITE,
+    COLOR_BLACK,
+    COLOR_NONE
+} Color;
 
-// Colors
-#define WHITE 0
-#define BLACK 1
+typedef enum PieceType {
+    PIECE_TYPE_NONE,
+    PIECE_TYPE_PAWN,
+    PIECE_TYPE_KNIGHT,
+    PIECE_TYPE_BISHOP,
+    PIECE_TYPE_ROOK,
+    PIECE_TYPE_QUEEN,
+    PIECE_TYPE_KING
+} PieceType;
 
-// Function declarations
-void init_board();
-void print_board();
-int is_valid_position(int row, int col);
-int get_piece(int row, int col);
-void set_piece(int row, int col, int piece);
-int get_color(int row, int col);
-void set_color(int row, int col, int color);
+typedef enum Piece {
+    PIECE_NONE,
+    PIECE_WHITE_PAWN,
+    PIECE_WHITE_KNIGHT,
+    PIECE_WHITE_BISHOP,
+    PIECE_WHITE_ROOK,
+    PIECE_WHITE_QUEEN,
+    PIECE_WHITE_KING,
+    PIECE_BLACK_PAWN,
+    PIECE_BLACK_KNIGHT,
+    PIECE_BLACK_BISHOP,
+    PIECE_BLACK_ROOK,
+    PIECE_BLACK_QUEEN,
+    PIECE_BLACK_KING
+} Piece;
+
+int is_valid_coordinate(int row, int column);
+int is_valid_square(int square);
+
+int make_square(int row, int column);
+int square_row(int square);
+int square_column(int square);
+
+Color piece_color(Piece piece);
+Color opposite_color(Color color);
+PieceType piece_type(Piece piece);
 
 #endif // BOARD_H
