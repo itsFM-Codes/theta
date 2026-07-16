@@ -1,29 +1,25 @@
 #ifndef MOVE_H
 #define MOVE_H
 
-#include "board.h"
+#include <stdint.h>
+
 #include "position.h"
 
-#define MAX_MOVES 512
+#define MAX_MOVES 256
 
-typedef enum MoveFlag {
-    MOVE_NORMAL,
-    MOVE_CAPTURE,
-    MOVE_DOUBLE_PAWN,
-    MOVE_EN_PASSANT,
-    MOVE_CASTLE_KINGSIDE,
-    MOVE_CASTLE_QUEENSIDE,
-    MOVE_PROMOTION_QUEEN,
-    MOVE_PROMOTION_ROOK,
-    MOVE_PROMOTION_BISHOP,
-    MOVE_PROMOTION_KNIGHT
-} MoveFlag;
+#define MOVE_FLAG_NONE              0
+#define MOVE_FLAG_CAPTURE           (1 << 0)
+#define MOVE_FLAG_DOUBLE_PAWN       (1 << 1)
+#define MOVE_FLAG_EN_PASSANT        (1 << 2)
+#define MOVE_FLAG_CASTLE_KINGSIDE   (1 << 3)
+#define MOVE_FLAG_CASTLE_QUEENSIDE  (1 << 4)
+#define MOVE_FLAG_PROMOTION         (1 << 5)
 
 typedef struct Move {
     int from;
     int to;
     Piece promotion;
-    MoveFlag flag;
+    int flags;
 } Move;
 
 typedef struct MoveList {
@@ -32,13 +28,17 @@ typedef struct MoveList {
 } MoveList;
 
 typedef struct UndoState {
+    Piece moved_piece;
     Piece captured_piece;
+    int captured_square;
+
+    Color side_to_move;
     int castling_rights;
     int en_passant_square;
     int halfmove_clock;
+    int fullmove_number;
 } UndoState;
 
-void generate_moves(const Position *position, MoveList *moves);
 int make_move(Position *position, Move move, UndoState *undo);
 void undo_move(Position *position, Move move, const UndoState *undo);
 

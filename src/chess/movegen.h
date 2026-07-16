@@ -1,6 +1,8 @@
 #ifndef MOVEGEN_H
 #define MOVEGEN_H
 
-void generate_moves();
+#include "move.h"
 
-#endif // MOVEGEN_H
+void generate_moves(const Position *position, MoveList *moves);
+
+#endif

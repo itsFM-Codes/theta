@@ -15,7 +15,7 @@
 typedef struct Position {
     Piece board[SQUARE_COUNT];
     Color side_to_move;
-    uint8_t castling_rights;
+    int castling_rights;
     int en_passant_square;
     int halfmove_clock;
     int fullmove_number;
