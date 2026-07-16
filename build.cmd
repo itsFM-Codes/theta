@@ -62,6 +62,7 @@ echo [BUILD] legal_movegen_test
     tests\legal_movegen_test.cpp ^
     src\chess\board.cpp ^
     src\chess\position.cpp ^
+    src\chess\fen.cpp ^
     src\chess\move.cpp ^
     src\chess\movegen.cpp ^
     -o build\legal_movegen_test.exe

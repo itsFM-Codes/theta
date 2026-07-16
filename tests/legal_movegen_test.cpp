@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdint.h>
 
+#include "src/chess/fen.h"
 #include "src/chess/movegen.h"
 
 static uint64_t perft(Position *position, int depth) {
@@ -24,7 +25,7 @@ static uint64_t perft(Position *position, int depth) {
     return nodes;
 }
 
-int main(void) {
+static void test_starting_position(void) {
     Position position;
 
     set_starting_position(&position);
@@ -32,5 +33,23 @@ int main(void) {
     assert(perft(&position, 2) == 400);
     assert(perft(&position, 3) == 8902);
     assert(perft(&position, 4) == 197281);
+}
+
+static void test_kiwipete_position(void) {
+    Position position;
+    const char *fen =
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R "
+        "w KQkq - 0 1";
+
+    assert(position_from_fen(&position, fen));
+    assert(perft(&position, 1) == 48);
+    assert(perft(&position, 2) == 2039);
+    assert(perft(&position, 3) == 97862);
+    assert(perft(&position, 4) == 4085603);
+}
+
+int main(void) {
+    test_starting_position();
+    test_kiwipete_position();
     return 0;
 }
