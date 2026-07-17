@@ -1,4 +1,5 @@
 #include "evaluation.h"
+#include "piece_square_tables.h"
 
 static int piece_value(Piece piece) {
     switch (piece_type(piece)) {
@@ -31,7 +32,7 @@ int evaluate_position(const Position *position) {
 
     for (square = 0; square < SQUARE_COUNT; ++square) {
         Piece piece = position_piece_at(position, square);
-        int value = piece_value(piece);
+        int value = piece_value(piece) + piece_square_value(piece, square);
 
         if (piece_color(piece) == COLOR_WHITE) {
             score += value;
