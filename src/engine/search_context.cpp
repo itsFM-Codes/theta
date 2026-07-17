@@ -15,9 +15,12 @@ static void clear_move(Move *move) {
 void initialize_search_context(SearchContext *context, int time_limit_ms) {
     int ply;
 
-    context->start_time = clock();
+    context->start_time = std::chrono::steady_clock::now();
     context->time_limit_ms = time_limit_ms;
     context->stopped = 0;
+    context->nodes = 0;
+    context->quiescence_nodes = 0;
+    context->selective_depth = 0;
     context->position_key_count = 0;
     memset(context->history, 0, sizeof(context->history));
     initialize_transposition_table(&context->table);
@@ -56,14 +59,41 @@ int search_has_stopped(SearchContext *context) {
 }
 
 int search_elapsed_ms(const SearchContext *context) {
-    clock_t elapsed;
-
     if (context == 0) {
         return 0;
     }
 
-    elapsed = clock() - context->start_time;
-    return (int)(elapsed * 1000 / CLOCKS_PER_SEC);
+    return (int)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - context->start_time
+    ).count();
+}
+
+void search_record_node(SearchContext *context, int ply, int is_quiescence) {
+    if (context == 0) {
+        return;
+    }
+
+    context->nodes++;
+    if (is_quiescence) {
+        context->quiescence_nodes++;
+    }
+    if (ply > context->selective_depth) {
+        context->selective_depth = ply;
+    }
+}
+
+void search_get_statistics(
+    const SearchContext *context,
+    SearchStatistics *statistics
+) {
+    if (statistics == 0) {
+        return;
+    }
+
+    statistics->nodes = context == 0 ? 0 : context->nodes;
+    statistics->quiescence_nodes = context == 0 ? 0 : context->quiescence_nodes;
+    statistics->selective_depth = context == 0 ? 0 : context->selective_depth;
+    statistics->elapsed_ms = search_elapsed_ms(context);
 }
 
 int search_push_position(SearchContext *context, const Position *position) {

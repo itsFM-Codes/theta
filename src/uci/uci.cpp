@@ -1,6 +1,7 @@
 #include "uci.h"
 
 #include <ctype.h>
+#include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -218,12 +219,31 @@ static void print_search_info(
     int depth,
     int score,
     const PrincipalVariation *variation,
+    const SearchStatistics *statistics,
     void *user_data
 ) {
     int index;
+    uint64_t nps = 0;
 
     (void)user_data;
-    printf("info depth %d score cp %d pv", depth, score);
+    if (statistics != 0 && statistics->elapsed_ms > 0) {
+        nps = statistics->nodes * 1000u / (uint64_t)statistics->elapsed_ms;
+    }
+
+    printf("info depth %d seldepth %d ", depth,
+           statistics == 0 ? depth : statistics->selective_depth);
+    if (score > SEARCH_CHECKMATE - MAX_PRINCIPAL_VARIATION) {
+        printf("score mate %d ", (SEARCH_CHECKMATE - score + 1) / 2);
+    } else if (score < -SEARCH_CHECKMATE + MAX_PRINCIPAL_VARIATION) {
+        printf("score mate -%d ", (SEARCH_CHECKMATE + score + 1) / 2);
+    } else {
+        printf("score cp %d ", score);
+    }
+    printf("nodes ");
+    std::cout << (statistics == 0 ? 0 : statistics->nodes)
+              << " nps " << nps
+              << " time " << (statistics == 0 ? 0 : statistics->elapsed_ms)
+              << " pv";
 
     for (index = 0; index < variation->count; ++index) {
         putchar(' ');

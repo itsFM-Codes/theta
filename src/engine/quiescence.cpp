@@ -45,6 +45,8 @@ int quiescence_search(
     int in_check;
     int index;
 
+    search_record_node(context, ply, 1);
+
     if (search_has_stopped(context)) {
         return 0;
     }

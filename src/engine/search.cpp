@@ -104,6 +104,8 @@ static int negamax(
     table_move.promotion = PIECE_NONE;
     table_move.flags = MOVE_FLAG_NONE;
 
+    search_record_node(context, ply, 0);
+
     if (search_has_stopped(context)) {
         return 0;
     }
@@ -347,6 +349,8 @@ static int search_position_with_variation(
         return 0;
     }
 
+    search_record_node(context, 0, 0);
+
     if (search_has_stopped(context)) {
         return 0;
     }
@@ -569,7 +573,10 @@ int search_iterative_with_callback(
         }
 
         if (callback != 0) {
-            callback(depth, score, &current_variation, user_data);
+            SearchStatistics statistics;
+
+            search_get_statistics(&context, &statistics);
+            callback(depth, score, &current_variation, &statistics, user_data);
         }
 
         if (time_limit_ms > 0 &&

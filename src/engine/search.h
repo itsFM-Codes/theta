@@ -13,10 +13,18 @@ typedef struct PrincipalVariation {
     int count;
 } PrincipalVariation;
 
+typedef struct SearchStatistics {
+    uint64_t nodes;
+    uint64_t quiescence_nodes;
+    int selective_depth;
+    int elapsed_ms;
+} SearchStatistics;
+
 typedef void (*SearchInfoCallback)(
     int depth,
     int score,
     const PrincipalVariation *variation,
+    const SearchStatistics *statistics,
     void *user_data
 );
 
