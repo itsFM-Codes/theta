@@ -26,6 +26,7 @@ int search_has_stopped(SearchContext *context);
 int search_push_position(SearchContext *context, const Position *position);
 void search_pop_position(SearchContext *context);
 int search_is_draw(const SearchContext *context, const Position *position);
+int position_has_insufficient_material(const Position *position);
 
 int position_is_in_check(const Position *position);
 

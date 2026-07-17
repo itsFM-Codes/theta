@@ -160,6 +160,21 @@ static void test_threefold_repetition_detection(void) {
     destroy_search_context(&context);
 }
 
+static void test_insufficient_material_draw(void) {
+    Position position;
+
+    clear_position(&position);
+    position_set_piece(&position, make_square(7, 0), PIECE_WHITE_KING);
+    position_set_piece(&position, make_square(0, 7), PIECE_BLACK_KING);
+    position_set_piece(&position, make_square(5, 2), PIECE_WHITE_BISHOP);
+
+    assert(position_has_insufficient_material(&position));
+    assert(search_position(&position, 3, 0) == 0);
+
+    position_set_piece(&position, make_square(3, 0), PIECE_BLACK_BISHOP);
+    assert(position_has_insufficient_material(&position));
+}
+
 int main(void) {
     test_zero_depth_evaluates_position();
     test_search_captures_hanging_rook();
@@ -171,5 +186,6 @@ int main(void) {
     test_search_restores_material();
     test_fifty_move_draw();
     test_threefold_repetition_detection();
+    test_insufficient_material_draw();
     return 0;
 }

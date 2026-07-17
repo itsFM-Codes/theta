@@ -7,6 +7,9 @@
 #include "src/chess/zobrist.h"
 #include "src/eval/evaluation.h"
 
+#define REVERSE_FUTILITY_MARGIN 120
+#define LATE_MOVE_PRUNING_START 8
+
 static int has_non_pawn_material(const Position *position, Color color) {
     int square;
 
@@ -73,6 +76,14 @@ static int negamax(
     }
 
     in_check = position_is_in_check(position);
+
+    if (depth <= 2 && !in_check && beta < SEARCH_INFINITY) {
+        int static_score = evaluate_position(position);
+
+        if (static_score - depth * REVERSE_FUTILITY_MARGIN >= beta) {
+            return beta;
+        }
+    }
 
     if (depth >= 3 && !in_check && beta < SEARCH_INFINITY &&
         has_non_pawn_material(position, position->side_to_move)) {
@@ -146,6 +157,12 @@ static int negamax(
         }
 
         gives_check = move_gives_check(position, move);
+
+        if (depth <= 2 && !in_check &&
+            index >= LATE_MOVE_PRUNING_START + depth * 4 &&
+            (move.flags & MOVE_FLAG_CAPTURE) == 0 && !gives_check) {
+            continue;
+        }
 
         if (!make_move(position, move, &undo)) {
             continue;

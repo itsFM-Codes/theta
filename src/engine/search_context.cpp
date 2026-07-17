@@ -85,6 +85,10 @@ int search_is_draw(const SearchContext *context, const Position *position) {
         return 1;
     }
 
+    if (position_has_insufficient_material(position)) {
+        return 1;
+    }
+
     if (context == 0 || context->position_key_count < 3) {
         return 0;
     }
@@ -98,6 +102,50 @@ int search_is_draw(const SearchContext *context, const Position *position) {
     }
 
     return matches >= 2;
+}
+
+int position_has_insufficient_material(const Position *position) {
+    int minor_count = 0;
+    int bishop_color = -1;
+    int square;
+
+    if (position == 0) {
+        return 0;
+    }
+
+    for (square = 0; square < SQUARE_COUNT; ++square) {
+        Piece piece = position_piece_at(position, square);
+        PieceType type = piece_type(piece);
+
+        if (type == PIECE_TYPE_NONE || type == PIECE_TYPE_KING) {
+            continue;
+        }
+
+        if (type == PIECE_TYPE_PAWN || type == PIECE_TYPE_ROOK ||
+            type == PIECE_TYPE_QUEEN) {
+            return 0;
+        }
+
+        minor_count++;
+
+        if (type == PIECE_TYPE_KNIGHT) {
+            bishop_color = -2;
+        } else if (bishop_color >= -1) {
+            int color = (square_row(square) + square_column(square)) & 1;
+
+            if (bishop_color == -1) {
+                bishop_color = color;
+            } else if (bishop_color != color) {
+                return 0;
+            }
+        }
+    }
+
+    if (minor_count <= 1) {
+        return 1;
+    }
+
+    return bishop_color >= 0;
 }
 
 int position_is_in_check(const Position *position) {
