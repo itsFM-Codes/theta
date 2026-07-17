@@ -87,7 +87,7 @@ static int print_legal_moves(const char *fen) {
     return 1;
 }
 
-static int print_search_result(const char *fen, int depth) {
+static int print_search_result(const char *fen, int depth, int time_limit_ms) {
     Position position;
     Move best_move;
     PrincipalVariation variation;
@@ -103,6 +103,7 @@ static int print_search_result(const char *fen, int depth) {
     evaluation = search_iterative(
         &position,
         depth,
+        time_limit_ms,
         &best_move,
         &variation,
         &completed_depth
@@ -148,8 +149,27 @@ static int parse_depth(const char *text, int *depth) {
     return 1;
 }
 
+static int parse_time_limit(const char *text, int *time_limit_ms) {
+    char *end;
+    long value;
+
+    if (text == 0 || time_limit_ms == 0) {
+        return 0;
+    }
+
+    value = strtol(text, &end, 10);
+
+    if (*text == '\0' || *end != '\0' || value < 0 || value > 60000) {
+        return 0;
+    }
+
+    *time_limit_ms = (int)value;
+    return 1;
+}
+
 int main(int argc, char **argv) {
     int depth;
+    int time_limit_ms;
 
     if (!load_config(CONFIG_FILE)) {
         return EXIT_FAILURE;
@@ -161,7 +181,17 @@ int main(int argc, char **argv) {
 
     if (argc == 4 && strcmp(argv[1], "search") == 0 &&
         parse_depth(argv[2], &depth)) {
-        return print_search_result(argv[3], depth) ? EXIT_SUCCESS : EXIT_FAILURE;
+        return print_search_result(argv[3], depth, 0)
+            ? EXIT_SUCCESS
+            : EXIT_FAILURE;
+    }
+
+    if (argc == 5 && strcmp(argv[1], "search") == 0 &&
+        parse_depth(argv[2], &depth) &&
+        parse_time_limit(argv[3], &time_limit_ms)) {
+        return print_search_result(argv[4], depth, time_limit_ms)
+            ? EXIT_SUCCESS
+            : EXIT_FAILURE;
     }
 
     return EXIT_SUCCESS;

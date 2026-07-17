@@ -40,6 +40,24 @@
         <aside class="panel" id="side-panel">
           <div class="engine-state">
             <span id="depth">Depth 3</span>
+            <button class="engine-settings" id="engine-settings" aria-label="Search settings" aria-expanded="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19.1 13.5c.1-.5.1-1 .1-1.5s0-1-.1-1.5l2.1-1.6-2-3.5-2.5 1a8.3 8.3 0 0 0-2.6-1.5L13.8 2h-4l-.4 2.7a8.3 8.3 0 0 0-2.6 1.5l-2.5-1-2 3.5 2.1 1.6c-.1.5-.1 1-.1 1.5s0 1 .1 1.5l-2.1 1.6 2 3.5 2.5-1a8.3 8.3 0 0 0 2.6 1.5l.4 2.7h4l.4-2.7a8.3 8.3 0 0 0 2.6-1.5l2.5 1 2-3.5-2.1-1.6ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="search-settings" id="search-settings" hidden>
+            <label>
+              <span>Search time</span>
+              <output id="search-time-value">1.0s</output>
+              <input id="search-time" type="range" min="100" max="5000" step="100" value="1000">
+            </label>
+            <label>
+              <span>Depth limit</span>
+              <output id="search-depth-value">8</output>
+              <input id="search-depth" type="range" min="1" max="8" step="1" value="8">
+            </label>
           </div>
 
           <ol class="lines" id="lines"></ol>

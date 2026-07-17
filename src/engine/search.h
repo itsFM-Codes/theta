@@ -17,6 +17,7 @@ int search_position(Position *position, int depth, Move *best_move);
 int search_iterative(
     Position *position,
     int maximum_depth,
+    int time_limit_ms,
     Move *best_move,
     PrincipalVariation *variation,
     int *completed_depth

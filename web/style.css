@@ -252,6 +252,63 @@ button {
   font-size: 12px;
 }
 
+.engine-settings {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.engine-settings:hover,
+.engine-settings[aria-expanded="true"] {
+  background: #3a3835;
+  color: #d5d2cc;
+}
+
+.engine-settings svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.search-settings {
+  display: grid;
+  gap: 16px;
+  margin: 0 -14px 12px;
+  padding: 16px 18px;
+  border-top: 1px solid #3b3936;
+  border-bottom: 1px solid #3b3936;
+  background: #292724;
+}
+
+.search-settings[hidden] {
+  display: none;
+}
+
+.search-settings label {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px 12px;
+  color: #d5d2cc;
+  font-size: 13px;
+}
+
+.search-settings output {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.search-settings input {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: var(--accent);
+}
+
 .lines {
   margin: 0;
   padding: 0;

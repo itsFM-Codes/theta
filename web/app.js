@@ -16,11 +16,16 @@ const MOVE_FLAG_EN_PASSANT = 1 << 2;
 const MOVE_FLAG_CASTLE_KINGSIDE = 1 << 3;
 const MOVE_FLAG_CASTLE_QUEENSIDE = 1 << 4;
 const MOVE_FLAG_PROMOTION = 1 << 5;
-const SEARCH_DEPTH = 5; // Engine cant do more than 6 for now..
+let searchDepth = 8;
+let searchTimeMs = 1000;
 
 const boardElement = document.querySelector('#board');
 const linesElement = document.querySelector('#lines');
 const modeButtons = document.querySelectorAll('.mode');
+const settingsButton = document.querySelector('#engine-settings');
+const settingsElement = document.querySelector('#search-settings');
+const searchTimeInput = document.querySelector('#search-time');
+const searchDepthInput = document.querySelector('#search-depth');
 
 let board = createStartingPosition();
 let currentMode = 'play';
@@ -42,7 +47,7 @@ let dragMoveApplied = false;
 let dragDropPending = false;
 let materialEvaluation = 0;
 let evaluationRequestNumber = 0;
-let analysisDepth = SEARCH_DEPTH;
+let analysisDepth = searchDepth;
 let principalVariation = [];
 
 function createStartingPosition() {
@@ -422,7 +427,8 @@ async function requestSearch() {
       },
       body: JSON.stringify({
         fen: currentFen(),
-        depth: SEARCH_DEPTH
+        depth: searchDepth,
+        timeMs: searchTimeMs
       })
     });
 
@@ -685,6 +691,20 @@ function updateEvaluation(evaluation) {
   bar.classList.toggle('flipped', isFlipped);
 }
 
+function refreshSearchSettings() {
+  searchTimeInput.value = searchTimeMs;
+  searchDepthInput.value = searchDepth;
+  document.querySelector('#search-time-value').textContent =
+    `${(searchTimeMs / 1000).toFixed(1)}s`;
+  document.querySelector('#search-depth-value').textContent = searchDepth;
+}
+
+function updateSearchSettings() {
+  searchTimeMs = Number(searchTimeInput.value);
+  searchDepth = Number(searchDepthInput.value);
+  refreshSearchSettings();
+}
+
 function applyVariationMove(lineBoard, move, side) {
   const source = squareCoordinates(move.from);
   const target = squareCoordinates(move.to);
@@ -855,6 +875,22 @@ document.querySelector('#flip').addEventListener('click', () => {
 document.querySelector('#reset').addEventListener('click', resetBoard);
 document.querySelector('#clear').addEventListener('click', clearBoard);
 document.querySelector('#start').addEventListener('click', resetBoard);
+settingsButton.addEventListener('click', () => {
+  const isOpen = settingsButton.getAttribute('aria-expanded') === 'true';
+
+  settingsButton.setAttribute('aria-expanded', String(!isOpen));
+  settingsElement.hidden = isOpen;
+});
+searchTimeInput.addEventListener('input', updateSearchSettings);
+searchDepthInput.addEventListener('input', updateSearchSettings);
+searchTimeInput.addEventListener('change', () => {
+  updateSearchSettings();
+  requestSearch();
+});
+searchDepthInput.addEventListener('change', () => {
+  updateSearchSettings();
+  requestSearch();
+});
 document.querySelector('#first-move').addEventListener('click', () => {
   goToHistory(0);
 });
@@ -882,6 +918,7 @@ document.addEventListener('keydown', event => {
 
 renderEditorTray();
 resetHistory();
+refreshSearchSettings();
 renderBoard();
 refreshAnalysis();
 requestSearch();

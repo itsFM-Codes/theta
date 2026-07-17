@@ -64,6 +64,7 @@ static void test_iterative_search_reaches_requested_depth(void) {
     assert(search_iterative(
         &position,
         2,
+        0,
         &best_move,
         &variation,
         &completed_depth

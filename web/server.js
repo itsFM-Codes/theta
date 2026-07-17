@@ -46,6 +46,7 @@ function handleEngineRequest(request, response, command) {
   readRequestBody(request, body => {
     let fen;
     let arguments;
+    let timeout = 5000;
 
     try {
       const value = JSON.parse(body);
@@ -57,7 +58,14 @@ function handleEngineRequest(request, response, command) {
           return;
         }
 
-        arguments = [command, String(value.depth), fen];
+        if (!Number.isInteger(value.timeMs) ||
+            value.timeMs < 0 || value.timeMs > 60000) {
+          sendJson(response, 400, { error: 'Invalid time limit' });
+          return;
+        }
+
+        arguments = [command, String(value.depth), String(value.timeMs), fen];
+        timeout = value.timeMs + 1000;
       } else {
         arguments = [command, fen];
       }
@@ -81,7 +89,7 @@ function handleEngineRequest(request, response, command) {
       arguments,
       {
         cwd: PROJECT_DIRECTORY,
-        timeout: 5000,
+        timeout,
         maxBuffer: 1024 * 1024,
         windowsHide: true
       },

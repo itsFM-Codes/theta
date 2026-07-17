@@ -1,7 +1,36 @@
 #include "search.h"
 
+#include <time.h>
+
 #include "src/chess/movegen.h"
 #include "src/eval/evaluation.h"
+
+typedef struct SearchContext {
+    clock_t start_time;
+    int time_limit_ms;
+    int stopped;
+} SearchContext;
+
+static int search_has_stopped(SearchContext *context) {
+    clock_t elapsed;
+
+    if (context == 0 || context->time_limit_ms <= 0) {
+        return 0;
+    }
+
+    if (context->stopped) {
+        return 1;
+    }
+
+    elapsed = clock() - context->start_time;
+
+    if (elapsed * 1000 / CLOCKS_PER_SEC >= context->time_limit_ms) {
+        context->stopped = 1;
+        return 1;
+    }
+
+    return 0;
+}
 
 static int piece_value(Piece piece) {
     switch (piece_type(piece)) {
@@ -118,11 +147,16 @@ static int quiescence(
     Position *position,
     int alpha,
     int beta,
-    int ply
+    int ply,
+    SearchContext *context
 ) {
     MoveList moves;
     int in_check;
     int index;
+
+    if (search_has_stopped(context)) {
+        return 0;
+    }
 
     generate_legal_moves(position, &moves);
     in_check = position_is_in_check(position);
@@ -154,6 +188,10 @@ static int quiescence(
         UndoState undo;
         int score;
 
+        if (search_has_stopped(context)) {
+            return 0;
+        }
+
         if (!in_check && (move.flags & MOVE_FLAG_CAPTURE) == 0) {
             continue;
         }
@@ -162,8 +200,12 @@ static int quiescence(
             continue;
         }
 
-        score = -quiescence(position, -beta, -alpha, ply + 1);
+        score = -quiescence(position, -beta, -alpha, ply + 1, context);
         undo_move(position, move, &undo);
+
+        if (search_has_stopped(context)) {
+            return 0;
+        }
 
         if (score >= beta) {
             return beta;
@@ -183,15 +225,20 @@ static int negamax(
     int alpha,
     int beta,
     int ply,
-    PrincipalVariation *variation
+    PrincipalVariation *variation,
+    SearchContext *context
 ) {
     MoveList moves;
     int index;
 
     clear_variation(variation);
 
+    if (search_has_stopped(context)) {
+        return 0;
+    }
+
     if (depth <= 0) {
-        return quiescence(position, alpha, beta, ply);
+        return quiescence(position, alpha, beta, ply, context);
     }
 
     generate_legal_moves(position, &moves);
@@ -218,6 +265,10 @@ static int negamax(
         UndoState undo;
         int score;
 
+        if (search_has_stopped(context)) {
+            return 0;
+        }
+
         if (!make_move(position, move, &undo)) {
             continue;
         }
@@ -228,9 +279,14 @@ static int negamax(
             -beta,
             -alpha,
             ply + 1,
-            &child_variation
+            &child_variation,
+            context
         );
         undo_move(position, move, &undo);
+
+        if (search_has_stopped(context)) {
+            return 0;
+        }
 
         if (score >= beta) {
             update_variation(variation, move, &child_variation);
@@ -249,7 +305,8 @@ static int negamax(
 static int search_position_with_variation(
     Position *position,
     int depth,
-    PrincipalVariation *variation
+    PrincipalVariation *variation,
+    SearchContext *context
 ) {
     MoveList moves;
     int alpha = -SEARCH_INFINITY;
@@ -259,6 +316,10 @@ static int search_position_with_variation(
     clear_variation(variation);
 
     if (position == 0) {
+        return 0;
+    }
+
+    if (search_has_stopped(context)) {
         return 0;
     }
 
@@ -290,6 +351,10 @@ static int search_position_with_variation(
         UndoState undo;
         int score;
 
+        if (search_has_stopped(context)) {
+            return 0;
+        }
+
         if (!make_move(position, move, &undo)) {
             continue;
         }
@@ -300,9 +365,14 @@ static int search_position_with_variation(
             -beta,
             -alpha,
             1,
-            &child_variation
+            &child_variation,
+            context
         );
         undo_move(position, move, &undo);
+
+        if (search_has_stopped(context)) {
+            return 0;
+        }
 
         if (score > alpha) {
             alpha = score;
@@ -315,7 +385,7 @@ static int search_position_with_variation(
 
 int search_position(Position *position, int depth, Move *best_move) {
     PrincipalVariation variation;
-    int score = search_position_with_variation(position, depth, &variation);
+    int score = search_position_with_variation(position, depth, &variation, 0);
 
     if (best_move != 0) {
         best_move->from = NO_SQUARE;
@@ -334,12 +404,14 @@ int search_position(Position *position, int depth, Move *best_move) {
 int search_iterative(
     Position *position,
     int maximum_depth,
+    int time_limit_ms,
     Move *best_move,
     PrincipalVariation *variation,
     int *completed_depth
 ) {
     Move move;
     PrincipalVariation current_variation;
+    SearchContext context;
     int depth;
     int score = 0;
 
@@ -364,12 +436,23 @@ int search_iterative(
         return evaluate_position(position);
     }
 
+    context.start_time = clock();
+    context.time_limit_ms = time_limit_ms;
+    context.stopped = 0;
+
+    score = evaluate_position(position);
+
     for (depth = 1; depth <= maximum_depth; ++depth) {
         score = search_position_with_variation(
             position,
             depth,
-            &current_variation
+            &current_variation,
+            &context
         );
+
+        if (context.stopped) {
+            break;
+        }
 
         if (current_variation.count > 0) {
             move = current_variation.moves[0];
