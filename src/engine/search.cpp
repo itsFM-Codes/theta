@@ -11,6 +11,30 @@
 #define LATE_MOVE_PRUNING_START 8
 #define MAX_CHECK_EXTENSION_PLY 8
 
+static int score_to_table(int score, int ply) {
+    if (score > SEARCH_CHECKMATE - MAX_PRINCIPAL_VARIATION) {
+        return score + ply;
+    }
+
+    if (score < -SEARCH_CHECKMATE + MAX_PRINCIPAL_VARIATION) {
+        return score - ply;
+    }
+
+    return score;
+}
+
+static int score_from_table(int score, int ply) {
+    if (score > SEARCH_CHECKMATE - MAX_PRINCIPAL_VARIATION) {
+        return score - ply;
+    }
+
+    if (score < -SEARCH_CHECKMATE + MAX_PRINCIPAL_VARIATION) {
+        return score + ply;
+    }
+
+    return score;
+}
+
 static int has_non_pawn_material(const Position *position, Color color) {
     int square;
 
@@ -130,7 +154,7 @@ static int negamax(
             update_variation(variation, table_move, 0);
         }
 
-        return table_score;
+        return score_from_table(table_score, ply);
     }
 
     generate_legal_moves(position, &moves);
@@ -227,7 +251,7 @@ static int negamax(
                 &context->table,
                 key,
                 depth,
-                beta,
+                score_to_table(beta, ply),
                 TRANSPOSITION_LOWER_BOUND,
                 move
             );
@@ -244,7 +268,7 @@ static int negamax(
         &context->table,
         key,
         depth,
-        alpha,
+        score_to_table(alpha, ply),
         alpha <= original_alpha
             ? TRANSPOSITION_UPPER_BOUND
             : TRANSPOSITION_EXACT,
@@ -304,7 +328,7 @@ static int search_position_with_variation(
             update_variation(variation, table_move, 0);
         }
 
-        return table_score;
+        return score_from_table(table_score, 0);
     }
 
     generate_legal_moves(position, &moves);
@@ -360,7 +384,7 @@ static int search_position_with_variation(
         &context->table,
         key,
         depth,
-        alpha,
+        score_to_table(alpha, 0),
         TRANSPOSITION_EXACT,
         variation->count > 0 ? variation->moves[0] : table_move
     );
