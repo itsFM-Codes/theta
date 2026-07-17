@@ -5,6 +5,8 @@
 #include "src/chess/movegen.h"
 #include "src/eval/evaluation.h"
 
+#define CHECK_MOVE_SCORE 5000
+
 typedef struct SearchContext {
     clock_t start_time;
     int time_limit_ms;
@@ -53,11 +55,30 @@ static int piece_value(Piece piece) {
     return 0;
 }
 
-static int move_order_score(const Position *position, Move move) {
+static int position_is_in_check(const Position *position);
+
+static int move_gives_check(Position *position, Move move) {
+    UndoState undo;
+    int gives_check;
+
+    if (!make_move(position, move, &undo)) {
+        return 0;
+    }
+
+    gives_check = position_is_in_check(position);
+    undo_move(position, move, &undo);
+    return gives_check;
+}
+
+static int move_order_score(Position *position, Move move, int order_checks) {
     Piece attacker;
     Piece victim;
 
     if ((move.flags & MOVE_FLAG_CAPTURE) == 0) {
+        if (order_checks && move_gives_check(position, move)) {
+            return CHECK_MOVE_SCORE;
+        }
+
         return 0;
     }
 
@@ -72,11 +93,20 @@ static int move_order_score(const Position *position, Move move) {
     return 10000 + piece_value(victim) * 16 - piece_value(attacker);
 }
 
-static void order_moves(const Position *position, MoveList *moves) {
+static void order_moves(Position *position, MoveList *moves, int order_checks) {
     int index;
+    int scores[MAX_MOVES];
 
     if (position == 0 || moves == 0) {
         return;
+    }
+
+    for (index = 0; index < moves->count; ++index) {
+        scores[index] = move_order_score(
+            position,
+            moves->moves[index],
+            order_checks
+        );
     }
 
     for (index = 0; index < moves->count; ++index) {
@@ -84,17 +114,19 @@ static void order_moves(const Position *position, MoveList *moves) {
         int next;
 
         for (next = index + 1; next < moves->count; ++next) {
-            if (move_order_score(position, moves->moves[next]) >
-                move_order_score(position, moves->moves[best_index])) {
+            if (scores[next] > scores[best_index]) {
                 best_index = next;
             }
         }
 
         if (best_index != index) {
             Move move = moves->moves[index];
+            int score = scores[index];
 
             moves->moves[index] = moves->moves[best_index];
             moves->moves[best_index] = move;
+            scores[index] = scores[best_index];
+            scores[best_index] = score;
         }
     }
 }
@@ -181,7 +213,7 @@ static int quiescence(
         }
     }
 
-    order_moves(position, &moves);
+    order_moves(position, &moves, 0);
 
     for (index = 0; index < moves.count; ++index) {
         Move move = moves.moves[index];
@@ -242,7 +274,7 @@ static int negamax(
     }
 
     generate_legal_moves(position, &moves);
-    order_moves(position, &moves);
+    order_moves(position, &moves, 1);
 
     if (moves.count == 0) {
         int king_square = find_king(position, position->side_to_move);
@@ -328,7 +360,7 @@ static int search_position_with_variation(
     }
 
     generate_legal_moves(position, &moves);
-    order_moves(position, &moves);
+    order_moves(position, &moves, 1);
 
     if (moves.count == 0) {
         int king_square = find_king(position, position->side_to_move);

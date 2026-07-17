@@ -1,6 +1,7 @@
 #include <assert.h>
 
 #include "src/chess/board.h"
+#include "src/chess/movegen.h"
 #include "src/chess/position.h"
 #include "src/engine/search.h"
 #include "src/eval/evaluation.h"
@@ -101,6 +102,27 @@ static void test_quiescence_keeps_starting_position_equal(void) {
     assert(search_position(&position, 5, 0) == 0);
 }
 
+static void test_search_prefers_a_checking_move(void) {
+    Position position;
+    Move best_move;
+    UndoState undo;
+    int king_square;
+
+    clear_position(&position);
+    position_set_piece(&position, make_square(7, 0), PIECE_WHITE_KING);
+    position_set_piece(&position, make_square(7, 3), PIECE_WHITE_QUEEN);
+    position_set_piece(&position, make_square(0, 4), PIECE_BLACK_KING);
+    position.side_to_move = COLOR_WHITE;
+
+    search_position(&position, 1, &best_move);
+    assert(make_move(&position, best_move, &undo));
+
+    king_square = find_king(&position, COLOR_BLACK);
+    assert(is_square_attacked(&position, king_square, COLOR_WHITE));
+
+    undo_move(&position, best_move, &undo);
+}
+
 int main(void) {
     test_zero_depth_evaluates_position();
     test_search_captures_hanging_rook();
@@ -108,5 +130,6 @@ int main(void) {
     test_iterative_search_reaches_requested_depth();
     test_quiescence_sees_a_recapture();
     test_quiescence_keeps_starting_position_equal();
+    test_search_prefers_a_checking_move();
     return 0;
 }
