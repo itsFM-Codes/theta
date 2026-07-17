@@ -5,6 +5,33 @@
 #include "src/chess/movegen.h"
 #include "src/eval/evaluation.h"
 
+#define DELTA_MARGIN 200
+
+static int piece_value(Piece piece) {
+    switch (piece_type(piece)) {
+        case PIECE_TYPE_PAWN:
+            return PAWN_VALUE;
+        case PIECE_TYPE_KNIGHT:
+            return KNIGHT_VALUE;
+        case PIECE_TYPE_BISHOP:
+            return BISHOP_VALUE;
+        case PIECE_TYPE_ROOK:
+            return ROOK_VALUE;
+        case PIECE_TYPE_QUEEN:
+            return QUEEN_VALUE;
+        default:
+            return 0;
+    }
+}
+
+static int capture_value(const Position *position, Move move) {
+    if (move.flags & MOVE_FLAG_EN_PASSANT) {
+        return PAWN_VALUE;
+    }
+
+    return piece_value(position_piece_at(position, move.to));
+}
+
 int quiescence_search(
     Position *position,
     int alpha,
@@ -13,6 +40,7 @@ int quiescence_search(
     SearchContext *context
 ) {
     MoveList moves;
+    int stand_pat = 0;
     int in_check;
     int index;
 
@@ -36,7 +64,7 @@ int quiescence_search(
     }
 
     if (!in_check) {
-        int stand_pat = evaluate_position(position);
+        stand_pat = evaluate_position(position);
 
         if (stand_pat >= beta) {
             return beta;
@@ -59,6 +87,11 @@ int quiescence_search(
         }
 
         if (!in_check && (move.flags & MOVE_FLAG_CAPTURE) == 0) {
+            continue;
+        }
+
+        if (!in_check && (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
+            stand_pat + capture_value(position, move) + DELTA_MARGIN < alpha) {
             continue;
         }
 

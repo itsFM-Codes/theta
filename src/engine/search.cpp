@@ -235,6 +235,8 @@ static int negamax(
 static int search_position_with_variation(
     Position *position,
     int depth,
+    int alpha,
+    int beta,
     PrincipalVariation *variation,
     SearchContext *context
 ) {
@@ -242,8 +244,6 @@ static int search_position_with_variation(
     Move table_move;
     uint64_t key;
     int table_score;
-    int alpha = -SEARCH_INFINITY;
-    int beta = SEARCH_INFINITY;
     int index;
 
     clear_variation(variation);
@@ -353,7 +353,14 @@ int search_position(Position *position, int depth, Move *best_move) {
 
     initialize_search_context(&context, 0);
     search_push_position(&context, position);
-    score = search_position_with_variation(position, depth, &variation, &context);
+    score = search_position_with_variation(
+        position,
+        depth,
+        -SEARCH_INFINITY,
+        SEARCH_INFINITY,
+        &variation,
+        &context
+    );
 
     if (best_move != 0) {
         best_move->from = NO_SQUARE;
@@ -415,15 +422,40 @@ int search_iterative_with_callback(
     completed_score = evaluate_position(position);
 
     for (depth = 1; depth <= maximum_depth; ++depth) {
+        int alpha = -SEARCH_INFINITY;
+        int beta = SEARCH_INFINITY;
+
+        if (depth > 1) {
+            alpha = completed_score - 50;
+            beta = completed_score + 50;
+        }
+
         score = search_position_with_variation(
             position,
             depth,
+            alpha,
+            beta,
             &current_variation,
             &context
         );
 
         if (context.stopped) {
             break;
+        }
+
+        if (score <= alpha || score >= beta) {
+            score = search_position_with_variation(
+                position,
+                depth,
+                -SEARCH_INFINITY,
+                SEARCH_INFINITY,
+                &current_variation,
+                &context
+            );
+
+            if (context.stopped) {
+                break;
+            }
         }
 
         completed_score = score;
