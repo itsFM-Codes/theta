@@ -35,7 +35,7 @@ void destroy_search_context(SearchContext *context) {
 }
 
 int search_has_stopped(SearchContext *context) {
-    clock_t elapsed;
+    int elapsed;
 
     if (context == 0 || context->time_limit_ms <= 0) {
         return 0;
@@ -45,14 +45,25 @@ int search_has_stopped(SearchContext *context) {
         return 1;
     }
 
-    elapsed = clock() - context->start_time;
+    elapsed = search_elapsed_ms(context);
 
-    if (elapsed * 1000 / CLOCKS_PER_SEC >= context->time_limit_ms) {
+    if (elapsed >= context->time_limit_ms) {
         context->stopped = 1;
         return 1;
     }
 
     return 0;
+}
+
+int search_elapsed_ms(const SearchContext *context) {
+    clock_t elapsed;
+
+    if (context == 0) {
+        return 0;
+    }
+
+    elapsed = clock() - context->start_time;
+    return (int)(elapsed * 1000 / CLOCKS_PER_SEC);
 }
 
 int search_push_position(SearchContext *context, const Position *position) {

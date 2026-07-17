@@ -23,6 +23,7 @@ typedef struct SearchContext {
 void initialize_search_context(SearchContext *context, int time_limit_ms);
 void destroy_search_context(SearchContext *context);
 int search_has_stopped(SearchContext *context);
+int search_elapsed_ms(const SearchContext *context);
 int search_push_position(SearchContext *context, const Position *position);
 void search_pop_position(SearchContext *context);
 int search_is_draw(const SearchContext *context, const Position *position);

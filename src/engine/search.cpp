@@ -65,12 +65,28 @@ static int move_gives_check(Position *position, Move move) {
     return gives_check;
 }
 
+static int pawn_reaches_seventh_rank(const Position *position, Move move) {
+    Piece piece = position_piece_at(position, move.from);
+    int target_row = square_row(move.to);
+
+    if (piece == PIECE_WHITE_PAWN) {
+        return target_row == 1;
+    }
+
+    if (piece == PIECE_BLACK_PAWN) {
+        return target_row == 6;
+    }
+
+    return 0;
+}
+
 static int negamax(
     Position *position,
     int depth,
     int alpha,
     int beta,
     int ply,
+    int allow_null_move,
     PrincipalVariation *variation,
     SearchContext *context
 ) {
@@ -110,7 +126,7 @@ static int negamax(
         }
     }
 
-    if (depth >= 3 && !in_check && beta < SEARCH_INFINITY &&
+    if (allow_null_move && depth >= 3 && !in_check && beta < SEARCH_INFINITY &&
         has_non_pawn_material(position, position->side_to_move)) {
         Position null_position = *position;
         PrincipalVariation null_variation;
@@ -126,6 +142,7 @@ static int negamax(
             -beta,
             -beta + 1,
             ply + 1,
+            0,
             &null_variation,
             context
         );
@@ -136,9 +153,33 @@ static int negamax(
         }
 
         if (null_score >= beta) {
+            if (depth >= 6) {
+                PrincipalVariation verification_variation;
+                int verification_score = -negamax(
+                    position,
+                    depth - 4,
+                    -beta,
+                    -beta + 1,
+                    ply,
+                    0,
+                    &verification_variation,
+                    context
+                );
+
+                if (search_has_stopped(context)) {
+                    return 0;
+                }
+
+                if (verification_score < beta) {
+                    goto skip_null_cutoff;
+                }
+            }
+
             return beta;
         }
     }
+
+skip_null_cutoff:
 
     key = position_key(position);
     if (probe_transposition_table(
@@ -175,6 +216,7 @@ static int negamax(
         int search_depth = depth - 1;
         int reduced = 0;
         int gives_check;
+        int promotes_pawn;
         int score;
 
         if (search_has_stopped(context)) {
@@ -182,6 +224,7 @@ static int negamax(
         }
 
         gives_check = move_gives_check(position, move);
+        promotes_pawn = pawn_reaches_seventh_rank(position, move);
 
         if (depth <= 2 && !in_check &&
             index >= LATE_MOVE_PRUNING_START + depth * 4 &&
@@ -204,29 +247,31 @@ static int negamax(
 
         if (gives_check && ply < MAX_CHECK_EXTENSION_PLY) {
             search_depth++;
+        } else if (promotes_pawn && ply < MAX_CHECK_EXTENSION_PLY) {
+            search_depth++;
         }
 
         if (index == 0) {
             score = -negamax(
-                position, search_depth, -beta, -alpha, ply + 1,
+                position, search_depth, -beta, -alpha, ply + 1, 1,
                 &child_variation, context
             );
         } else {
             score = -negamax(
-                position, search_depth, -alpha - 1, -alpha, ply + 1,
+                position, search_depth, -alpha - 1, -alpha, ply + 1, 1,
                 &child_variation, context
             );
 
             if (score > alpha && score < beta && reduced) {
                 score = -negamax(
-                    position, depth - 1, -alpha - 1, -alpha, ply + 1,
+                    position, depth - 1, -alpha - 1, -alpha, ply + 1, 1,
                     &child_variation, context
                 );
             }
 
             if (score > alpha && score < beta) {
                 score = -negamax(
-                    position, depth - 1, -beta, -alpha, ply + 1,
+                    position, depth - 1, -beta, -alpha, ply + 1, 1,
                     &child_variation, context
                 );
             }
@@ -363,6 +408,7 @@ static int search_position_with_variation(
             depth - 1,
             -beta,
             -alpha,
+            1,
             1,
             &child_variation,
             context
@@ -524,6 +570,11 @@ int search_iterative_with_callback(
 
         if (callback != 0) {
             callback(depth, score, &current_variation, user_data);
+        }
+
+        if (time_limit_ms > 0 &&
+            search_elapsed_ms(&context) * 4 >= time_limit_ms * 3) {
+            break;
         }
     }
 
