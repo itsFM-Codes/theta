@@ -6,12 +6,76 @@
 #include "src/eval/evaluation.h"
 
 #define CHECK_MOVE_SCORE 5000
+#define KILLER_MOVE_SCORE 4000
+#define MAX_KILLER_PLY 64
 
 typedef struct SearchContext {
     clock_t start_time;
     int time_limit_ms;
     int stopped;
+    Move killer_moves[MAX_KILLER_PLY][2];
 } SearchContext;
+
+static void clear_move(Move *move) {
+    move->from = NO_SQUARE;
+    move->to = NO_SQUARE;
+    move->promotion = PIECE_NONE;
+    move->flags = MOVE_FLAG_NONE;
+}
+
+static void initialize_search_context(
+    SearchContext *context,
+    int time_limit_ms
+) {
+    int ply;
+
+    context->start_time = clock();
+    context->time_limit_ms = time_limit_ms;
+    context->stopped = 0;
+
+    for (ply = 0; ply < MAX_KILLER_PLY; ++ply) {
+        clear_move(&context->killer_moves[ply][0]);
+        clear_move(&context->killer_moves[ply][1]);
+    }
+}
+
+static int moves_are_equal(Move first, Move second) {
+    return first.from == second.from &&
+           first.to == second.to &&
+           first.promotion == second.promotion &&
+           first.flags == second.flags;
+}
+
+static int killer_move_score(
+    const SearchContext *context,
+    int ply,
+    Move move
+) {
+    if (context == 0 || ply < 0 || ply >= MAX_KILLER_PLY) {
+        return 0;
+    }
+
+    if (moves_are_equal(move, context->killer_moves[ply][0])) {
+        return KILLER_MOVE_SCORE;
+    }
+
+    if (moves_are_equal(move, context->killer_moves[ply][1])) {
+        return KILLER_MOVE_SCORE - 1;
+    }
+
+    return 0;
+}
+
+static void record_killer_move(SearchContext *context, int ply, Move move) {
+    if (context == 0 || ply < 0 || ply >= MAX_KILLER_PLY ||
+        (move.flags & MOVE_FLAG_CAPTURE) != 0 ||
+        moves_are_equal(move, context->killer_moves[ply][0])) {
+        return;
+    }
+
+    context->killer_moves[ply][1] = context->killer_moves[ply][0];
+    context->killer_moves[ply][0] = move;
+}
 
 static int search_has_stopped(SearchContext *context) {
     clock_t elapsed;
@@ -70,7 +134,13 @@ static int move_gives_check(Position *position, Move move) {
     return gives_check;
 }
 
-static int move_order_score(Position *position, Move move, int order_checks) {
+static int move_order_score(
+    Position *position,
+    Move move,
+    int order_checks,
+    const SearchContext *context,
+    int ply
+) {
     Piece attacker;
     Piece victim;
 
@@ -79,7 +149,7 @@ static int move_order_score(Position *position, Move move, int order_checks) {
             return CHECK_MOVE_SCORE;
         }
 
-        return 0;
+        return killer_move_score(context, ply, move);
     }
 
     attacker = position_piece_at(position, move.from);
@@ -93,7 +163,13 @@ static int move_order_score(Position *position, Move move, int order_checks) {
     return 10000 + piece_value(victim) * 16 - piece_value(attacker);
 }
 
-static void order_moves(Position *position, MoveList *moves, int order_checks) {
+static void order_moves(
+    Position *position,
+    MoveList *moves,
+    int order_checks,
+    const SearchContext *context,
+    int ply
+) {
     int index;
     int scores[MAX_MOVES];
 
@@ -105,7 +181,9 @@ static void order_moves(Position *position, MoveList *moves, int order_checks) {
         scores[index] = move_order_score(
             position,
             moves->moves[index],
-            order_checks
+            order_checks,
+            context,
+            ply
         );
     }
 
@@ -213,7 +291,7 @@ static int quiescence(
         }
     }
 
-    order_moves(position, &moves, 0);
+    order_moves(position, &moves, 0, context, ply);
 
     for (index = 0; index < moves.count; ++index) {
         Move move = moves.moves[index];
@@ -274,7 +352,7 @@ static int negamax(
     }
 
     generate_legal_moves(position, &moves);
-    order_moves(position, &moves, 1);
+    order_moves(position, &moves, 1, context, ply);
 
     if (moves.count == 0) {
         int king_square = find_king(position, position->side_to_move);
@@ -321,6 +399,7 @@ static int negamax(
         }
 
         if (score >= beta) {
+            record_killer_move(context, ply, move);
             update_variation(variation, move, &child_variation);
             return beta;
         }
@@ -360,7 +439,7 @@ static int search_position_with_variation(
     }
 
     generate_legal_moves(position, &moves);
-    order_moves(position, &moves, 1);
+    order_moves(position, &moves, 1, context, 0);
 
     if (moves.count == 0) {
         int king_square = find_king(position, position->side_to_move);
@@ -417,7 +496,11 @@ static int search_position_with_variation(
 
 int search_position(Position *position, int depth, Move *best_move) {
     PrincipalVariation variation;
-    int score = search_position_with_variation(position, depth, &variation, 0);
+    SearchContext context;
+    int score;
+
+    initialize_search_context(&context, 0);
+    score = search_position_with_variation(position, depth, &variation, &context);
 
     if (best_move != 0) {
         best_move->from = NO_SQUARE;
@@ -468,9 +551,7 @@ int search_iterative(
         return evaluate_position(position);
     }
 
-    context.start_time = clock();
-    context.time_limit_ms = time_limit_ms;
-    context.stopped = 0;
+    initialize_search_context(&context, time_limit_ms);
 
     score = evaluate_position(position);
 
