@@ -31,6 +31,28 @@ static void square_name(int square, char name[3]) {
     name[2] = '\0';
 }
 
+static void print_move_json(Move move) {
+    char from[3];
+    char to[3];
+    char promotion = promotion_character(move.promotion);
+
+    square_name(move.from, from);
+    square_name(move.to, to);
+
+    printf(
+        "{\"from\":\"%s\",\"to\":\"%s\",\"flags\":%d,",
+        from,
+        to,
+        move.flags
+    );
+
+    if (promotion != '\0') {
+        printf("\"promotion\":\"%c\"}", promotion);
+    } else {
+        printf("\"promotion\":null}");
+    }
+}
+
 static int print_legal_moves(const char *fen) {
     Position position;
     MoveList moves;
@@ -53,29 +75,12 @@ static int print_legal_moves(const char *fen) {
 
     for (index = 0; index < moves.count; ++index) {
         Move move = moves.moves[index];
-        char from[3];
-        char to[3];
-        char promotion = promotion_character(move.promotion);
-
-        square_name(move.from, from);
-        square_name(move.to, to);
 
         if (index > 0) {
             printf(",");
         }
 
-        printf(
-            "{\"from\":\"%s\",\"to\":\"%s\",\"flags\":%d,",
-            from,
-            to,
-            move.flags
-        );
-
-        if (promotion != '\0') {
-            printf("\"promotion\":\"%c\"}", promotion);
-        } else {
-            printf("\"promotion\":null}");
-        }
+        print_move_json(move);
     }
 
     printf("],\"count\":%d,\"evaluation\":%d}\n", moves.count, evaluation);
@@ -85,8 +90,10 @@ static int print_legal_moves(const char *fen) {
 static int print_search_result(const char *fen, int depth) {
     Position position;
     Move best_move;
+    PrincipalVariation variation;
     int completed_depth;
     int evaluation;
+    int index;
 
     if (!position_from_fen(&position, fen)) {
         fprintf(stderr, "Error: Invalid FEN\n");
@@ -97,6 +104,7 @@ static int print_search_result(const char *fen, int depth) {
         &position,
         depth,
         &best_move,
+        &variation,
         &completed_depth
     );
 
@@ -105,40 +113,20 @@ static int print_search_result(const char *fen, int depth) {
     }
 
     printf(
-        "{\"evaluation\":%d,\"depth\":%d,\"move\":",
+        "{\"evaluation\":%d,\"depth\":%d,\"pv\":[",
         evaluation,
         completed_depth
     );
 
-    if (is_valid_square(best_move.from) && is_valid_square(best_move.to)) {
-        char from[3];
-        char to[3];
-        char promotion = promotion_character(best_move.promotion);
-
-        square_name(best_move.from, from);
-        square_name(best_move.to, to);
-
-        if (promotion != '\0') {
-            printf(
-                "{\"from\":\"%s\",\"to\":\"%s\",\"flags\":%d,\"promotion\":\"%c\"}",
-                from,
-                to,
-                best_move.flags,
-                promotion
-            );
-        } else {
-            printf(
-                "{\"from\":\"%s\",\"to\":\"%s\",\"flags\":%d,\"promotion\":null}",
-                from,
-                to,
-                best_move.flags
-            );
+    for (index = 0; index < variation.count; ++index) {
+        if (index > 0) {
+            printf(",");
         }
-    } else {
-        printf("null");
+
+        print_move_json(variation.moves[index]);
     }
 
-    printf("}\n");
+    printf("]}\n");
     return 1;
 }
 

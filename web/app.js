@@ -43,7 +43,7 @@ let dragDropPending = false;
 let materialEvaluation = 0;
 let evaluationRequestNumber = 0;
 let analysisDepth = SEARCH_DEPTH;
-let bestMove = null;
+let principalVariation = [];
 
 function createStartingPosition() {
   return STARTING_POSITION.map(row => [...row]);
@@ -434,7 +434,7 @@ async function requestSearch() {
     if (requestNumber === evaluationRequestNumber) {
       updateEvaluation(result.evaluation);
       analysisDepth = result.depth;
-      bestMove = result.move;
+      principalVariation = result.pv || [];
       refreshAnalysis();
     }
   } catch (error) {
@@ -631,7 +631,7 @@ function handleEditorClick(row, column) {
   renderBoard();
   updateEvaluation(0);
   analysisDepth = 0;
-  bestMove = null;
+  principalVariation = [];
   refreshAnalysis();
 }
 
@@ -685,11 +685,67 @@ function updateEvaluation(evaluation) {
   bar.classList.toggle('flipped', isFlipped);
 }
 
-function bestMoveNotation(move) {
+function applyVariationMove(lineBoard, move, side) {
   const source = squareCoordinates(move.from);
-  const piece = board[source.row][source.column];
+  const target = squareCoordinates(move.to);
+  const piece = lineBoard[source.row][source.column];
 
-  return moveNotation(move, piece);
+  lineBoard[source.row][source.column] = '.';
+
+  if (move.flags & MOVE_FLAG_EN_PASSANT) {
+    const capturedRow = side === 'white'
+      ? target.row + 1
+      : target.row - 1;
+
+    lineBoard[capturedRow][target.column] = '.';
+  }
+
+  if (move.flags & MOVE_FLAG_CASTLE_KINGSIDE) {
+    lineBoard[source.row][5] = lineBoard[source.row][7];
+    lineBoard[source.row][7] = '.';
+  } else if (move.flags & MOVE_FLAG_CASTLE_QUEENSIDE) {
+    lineBoard[source.row][3] = lineBoard[source.row][0];
+    lineBoard[source.row][0] = '.';
+  }
+
+  if (move.flags & MOVE_FLAG_PROMOTION) {
+    lineBoard[target.row][target.column] = side === 'white'
+      ? move.promotion.toUpperCase()
+      : move.promotion;
+  } else {
+    lineBoard[target.row][target.column] = piece;
+  }
+}
+
+function formatPrincipalVariation() {
+  const lineBoard = board.map(row => [...row]);
+  const notation = [];
+  let lineSide = sideToMove;
+  let moveNumber = fullmoveNumber;
+
+  for (const move of principalVariation) {
+    const source = squareCoordinates(move.from);
+    const piece = lineBoard[source.row][source.column];
+    const text = moveNotation(move, piece);
+
+    if (lineSide === 'white') {
+      notation.push(`${moveNumber}. ${text}`);
+    } else if (notation.length === 0) {
+      notation.push(`${moveNumber}... ${text}`);
+    } else {
+      notation.push(text);
+    }
+
+    applyVariationMove(lineBoard, move, lineSide);
+
+    if (lineSide === 'black') {
+      moveNumber++;
+    }
+
+    lineSide = lineSide === 'white' ? 'black' : 'white';
+  }
+
+  return notation.join(' ');
 }
 
 function refreshAnalysis() {
@@ -697,7 +753,7 @@ function refreshAnalysis() {
 
   document.querySelector('#depth').textContent = `Depth ${analysisDepth}`;
 
-  if (bestMove == null) {
+  if (principalVariation.length === 0) {
     linesElement.innerHTML = '';
     return;
   }
@@ -705,7 +761,7 @@ function refreshAnalysis() {
   linesElement.innerHTML = [
     '<li>',
     `<span class="line-eval">${evaluationLabel}</span>`,
-    `<span class="line-moves">${bestMoveNotation(bestMove)}</span>`,
+    `<span class="line-moves">${formatPrincipalVariation()}</span>`,
     '</li>'
   ].join('');
 }

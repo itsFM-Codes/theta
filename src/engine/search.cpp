@@ -81,6 +81,39 @@ static int position_is_in_check(const Position *position) {
            );
 }
 
+static void clear_variation(PrincipalVariation *variation) {
+    if (variation != 0) {
+        variation->count = 0;
+    }
+}
+
+static void update_variation(
+    PrincipalVariation *variation,
+    Move move,
+    const PrincipalVariation *child_variation
+) {
+    int index;
+
+    if (variation == 0) {
+        return;
+    }
+
+    variation->moves[0] = move;
+    variation->count = 1;
+
+    if (child_variation == 0) {
+        return;
+    }
+
+    for (index = 0;
+         index < child_variation->count &&
+         variation->count < MAX_PRINCIPAL_VARIATION;
+         ++index) {
+        variation->moves[variation->count] = child_variation->moves[index];
+        variation->count++;
+    }
+}
+
 static int quiescence(
     Position *position,
     int alpha,
@@ -149,10 +182,13 @@ static int negamax(
     int depth,
     int alpha,
     int beta,
-    int ply
+    int ply,
+    PrincipalVariation *variation
 ) {
     MoveList moves;
     int index;
+
+    clear_variation(variation);
 
     if (depth <= 0) {
         return quiescence(position, alpha, beta, ply);
@@ -178,6 +214,7 @@ static int negamax(
 
     for (index = 0; index < moves.count; ++index) {
         Move move = moves.moves[index];
+        PrincipalVariation child_variation;
         UndoState undo;
         int score;
 
@@ -185,33 +222,41 @@ static int negamax(
             continue;
         }
 
-        score = -negamax(position, depth - 1, -beta, -alpha, ply + 1);
+        score = -negamax(
+            position,
+            depth - 1,
+            -beta,
+            -alpha,
+            ply + 1,
+            &child_variation
+        );
         undo_move(position, move, &undo);
 
         if (score >= beta) {
+            update_variation(variation, move, &child_variation);
             return beta;
         }
 
         if (score > alpha) {
             alpha = score;
+            update_variation(variation, move, &child_variation);
         }
     }
 
     return alpha;
 }
 
-int search_position(Position *position, int depth, Move *best_move) {
+static int search_position_with_variation(
+    Position *position,
+    int depth,
+    PrincipalVariation *variation
+) {
     MoveList moves;
     int alpha = -SEARCH_INFINITY;
     int beta = SEARCH_INFINITY;
     int index;
 
-    if (best_move != 0) {
-        best_move->from = NO_SQUARE;
-        best_move->to = NO_SQUARE;
-        best_move->promotion = PIECE_NONE;
-        best_move->flags = MOVE_FLAG_NONE;
-    }
+    clear_variation(variation);
 
     if (position == 0) {
         return 0;
@@ -241,6 +286,7 @@ int search_position(Position *position, int depth, Move *best_move) {
 
     for (index = 0; index < moves.count; ++index) {
         Move move = moves.moves[index];
+        PrincipalVariation child_variation;
         UndoState undo;
         int score;
 
@@ -248,28 +294,52 @@ int search_position(Position *position, int depth, Move *best_move) {
             continue;
         }
 
-        score = -negamax(position, depth - 1, -beta, -alpha, 1);
+        score = -negamax(
+            position,
+            depth - 1,
+            -beta,
+            -alpha,
+            1,
+            &child_variation
+        );
         undo_move(position, move, &undo);
 
         if (score > alpha) {
             alpha = score;
-
-            if (best_move != 0) {
-                *best_move = move;
-            }
+            update_variation(variation, move, &child_variation);
         }
     }
 
     return alpha;
 }
 
+int search_position(Position *position, int depth, Move *best_move) {
+    PrincipalVariation variation;
+    int score = search_position_with_variation(position, depth, &variation);
+
+    if (best_move != 0) {
+        best_move->from = NO_SQUARE;
+        best_move->to = NO_SQUARE;
+        best_move->promotion = PIECE_NONE;
+        best_move->flags = MOVE_FLAG_NONE;
+
+        if (variation.count > 0) {
+            *best_move = variation.moves[0];
+        }
+    }
+
+    return score;
+}
+
 int search_iterative(
     Position *position,
     int maximum_depth,
     Move *best_move,
+    PrincipalVariation *variation,
     int *completed_depth
 ) {
     Move move;
+    PrincipalVariation current_variation;
     int depth;
     int score = 0;
 
@@ -284,6 +354,8 @@ int search_iterative(
         *completed_depth = 0;
     }
 
+    clear_variation(variation);
+
     if (position == 0) {
         return 0;
     }
@@ -293,12 +365,22 @@ int search_iterative(
     }
 
     for (depth = 1; depth <= maximum_depth; ++depth) {
-        score = search_position(position, depth, &move);
+        score = search_position_with_variation(
+            position,
+            depth,
+            &current_variation
+        );
 
-        if (best_move != 0 &&
-            is_valid_square(move.from) &&
-            is_valid_square(move.to)) {
-            *best_move = move;
+        if (current_variation.count > 0) {
+            move = current_variation.moves[0];
+
+            if (best_move != 0) {
+                *best_move = move;
+            }
+
+            if (variation != 0) {
+                *variation = current_variation;
+            }
         }
 
         if (completed_depth != 0) {

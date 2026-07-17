@@ -51,6 +51,7 @@ static void test_search_detects_checkmate(void) {
 static void test_iterative_search_reaches_requested_depth(void) {
     Position position;
     Move best_move;
+    PrincipalVariation variation;
     int completed_depth;
 
     clear_position(&position);
@@ -60,10 +61,19 @@ static void test_iterative_search_reaches_requested_depth(void) {
     position_set_piece(&position, make_square(0, 7), PIECE_BLACK_KING);
     position.side_to_move = COLOR_WHITE;
 
-    assert(search_iterative(&position, 2, &best_move, &completed_depth) > 0);
+    assert(search_iterative(
+        &position,
+        2,
+        &best_move,
+        &variation,
+        &completed_depth
+    ) > 0);
     assert(completed_depth == 2);
     assert(best_move.from == make_square(7, 3));
     assert(best_move.to == make_square(0, 3));
+    assert(variation.count == 2);
+    assert(variation.moves[0].from == best_move.from);
+    assert(variation.moves[0].to == best_move.to);
 }
 
 static void test_quiescence_sees_a_recapture(void) {
