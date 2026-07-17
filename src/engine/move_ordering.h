@@ -11,6 +11,12 @@ void order_moves(
     int ply
 );
 
-void record_killer_move(SearchContext *context, int ply, Move move);
+void record_quiet_cutoff(
+    SearchContext *context,
+    Color color,
+    int ply,
+    int depth,
+    Move move
+);
 
 #endif // MOVE_ORDERING_H

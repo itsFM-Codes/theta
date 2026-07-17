@@ -1,5 +1,7 @@
 #include "search_internal.h"
 
+#include <string.h>
+
 #include "src/chess/movegen.h"
 
 static void clear_move(Move *move) {
@@ -15,6 +17,7 @@ void initialize_search_context(SearchContext *context, int time_limit_ms) {
     context->start_time = clock();
     context->time_limit_ms = time_limit_ms;
     context->stopped = 0;
+    memset(context->history, 0, sizeof(context->history));
 
     for (ply = 0; ply < MAX_KILLER_PLY; ++ply) {
         clear_move(&context->killer_moves[ply][0]);

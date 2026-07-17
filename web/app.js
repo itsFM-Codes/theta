@@ -22,6 +22,8 @@ let searchTimeMs = 1000;
 const boardElement = document.querySelector('#board');
 const linesElement = document.querySelector('#lines');
 const modeButtons = document.querySelectorAll('.mode');
+const evaluationElement = document.querySelector('.evaluation');
+const sidePanelElement = document.querySelector('#side-panel');
 const settingsButton = document.querySelector('#engine-settings');
 const settingsElement = document.querySelector('#search-settings');
 const searchTimeInput = document.querySelector('#search-time');
@@ -52,6 +54,19 @@ let principalVariation = [];
 
 function createStartingPosition() {
   return STARTING_POSITION.map(row => [...row]);
+}
+
+function syncWorkspaceHeight() {
+  const boardSize = boardElement.getBoundingClientRect().width;
+
+  if (window.innerWidth <= 780 || boardSize === 0) {
+    evaluationElement.style.height = '';
+    sidePanelElement.style.height = '';
+    return;
+  }
+
+  evaluationElement.style.height = `${boardSize}px`;
+  sidePanelElement.style.height = `${boardSize}px`;
 }
 
 function renderPiece(piece) {
@@ -916,9 +931,11 @@ document.addEventListener('keydown', event => {
   }
 });
 
+new ResizeObserver(syncWorkspaceHeight).observe(boardElement);
 renderEditorTray();
 resetHistory();
 refreshSearchSettings();
 renderBoard();
+syncWorkspaceHeight();
 refreshAnalysis();
 requestSearch();

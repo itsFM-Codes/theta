@@ -69,7 +69,13 @@ static int negamax(
         }
 
         if (score >= beta) {
-            record_killer_move(context, ply, move);
+            record_quiet_cutoff(
+                context,
+                position->side_to_move,
+                ply,
+                depth,
+                move
+            );
             update_variation(variation, move, &child_variation);
             return beta;
         }
@@ -192,6 +198,7 @@ int search_iterative(
     SearchContext context;
     int depth;
     int score = 0;
+    int completed_score;
 
     if (best_move != 0) {
         best_move->from = NO_SQUARE;
@@ -216,7 +223,7 @@ int search_iterative(
 
     initialize_search_context(&context, time_limit_ms);
 
-    score = evaluate_position(position);
+    completed_score = evaluate_position(position);
 
     for (depth = 1; depth <= maximum_depth; ++depth) {
         score = search_position_with_variation(
@@ -229,6 +236,8 @@ int search_iterative(
         if (context.stopped) {
             break;
         }
+
+        completed_score = score;
 
         if (current_variation.count > 0) {
             move = current_variation.moves[0];
@@ -247,5 +256,5 @@ int search_iterative(
         }
     }
 
-    return score;
+    return completed_score;
 }

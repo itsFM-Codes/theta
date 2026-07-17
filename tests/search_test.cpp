@@ -123,6 +123,18 @@ static void test_search_prefers_a_checking_move(void) {
     undo_move(&position, best_move, &undo);
 }
 
+static void test_search_restores_material(void) {
+    Position position;
+    PrincipalVariation variation;
+    int completed_depth;
+
+    set_starting_position(&position);
+    search_iterative(&position, 5, 0, 0, &variation, &completed_depth);
+
+    assert(completed_depth == 5);
+    assert(evaluate_position(&position) == 0);
+}
+
 int main(void) {
     test_zero_depth_evaluates_position();
     test_search_captures_hanging_rook();
@@ -131,5 +143,6 @@ int main(void) {
     test_quiescence_sees_a_recapture();
     test_quiescence_keeps_starting_position_equal();
     test_search_prefers_a_checking_move();
+    test_search_restores_material();
     return 0;
 }

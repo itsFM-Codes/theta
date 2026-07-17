@@ -5,6 +5,7 @@
 
 #define CHECK_MOVE_SCORE 5000
 #define KILLER_MOVE_SCORE 4000
+#define MAX_HISTORY_SCORE 3000
 
 static int moves_are_equal(Move first, Move second) {
     return first.from == second.from &&
@@ -67,6 +68,18 @@ static int killer_move_score(
     return 0;
 }
 
+static int history_move_score(
+    const SearchContext *context,
+    Color color,
+    Move move
+) {
+    if (context == 0 || color == COLOR_NONE) {
+        return 0;
+    }
+
+    return context->history[color][move.from][move.to];
+}
+
 static int move_order_score(
     Position *position,
     Move move,
@@ -78,11 +91,18 @@ static int move_order_score(
     Piece victim;
 
     if ((move.flags & MOVE_FLAG_CAPTURE) == 0) {
+        int killer_score;
+
         if (order_checks && move_gives_check(position, move)) {
             return CHECK_MOVE_SCORE;
         }
 
-        return killer_move_score(context, ply, move);
+        killer_score = killer_move_score(context, ply, move);
+        if (killer_score > 0) {
+            return killer_score;
+        }
+
+        return history_move_score(context, position->side_to_move, move);
     }
 
     attacker = position_piece_at(position, move.from);
@@ -142,13 +162,35 @@ void order_moves(
     }
 }
 
-void record_killer_move(SearchContext *context, int ply, Move move) {
+void record_quiet_cutoff(
+    SearchContext *context,
+    Color color,
+    int ply,
+    int depth,
+    Move move
+) {
+    int bonus;
+    int *history_score;
+
     if (context == 0 || ply < 0 || ply >= MAX_KILLER_PLY ||
-        (move.flags & MOVE_FLAG_CAPTURE) != 0 ||
-        moves_are_equal(move, context->killer_moves[ply][0])) {
+        (move.flags & MOVE_FLAG_CAPTURE) != 0) {
         return;
     }
 
-    context->killer_moves[ply][1] = context->killer_moves[ply][0];
-    context->killer_moves[ply][0] = move;
+    if (!moves_are_equal(move, context->killer_moves[ply][0])) {
+        context->killer_moves[ply][1] = context->killer_moves[ply][0];
+        context->killer_moves[ply][0] = move;
+    }
+
+    if (color == COLOR_NONE) {
+        return;
+    }
+
+    bonus = depth * depth;
+    history_score = &context->history[color][move.from][move.to];
+    *history_score += bonus;
+
+    if (*history_score > MAX_HISTORY_SCORE) {
+        *history_score = MAX_HISTORY_SCORE;
+    }
 }

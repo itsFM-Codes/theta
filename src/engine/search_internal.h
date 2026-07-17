@@ -12,6 +12,7 @@ typedef struct SearchContext {
     int time_limit_ms;
     int stopped;
     Move killer_moves[MAX_KILLER_PLY][2];
+    int history[2][SQUARE_COUNT][SQUARE_COUNT];
 } SearchContext;
 
 void initialize_search_context(SearchContext *context, int time_limit_ms);

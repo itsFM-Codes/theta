@@ -200,7 +200,6 @@ button {
 
 .evaluation {
   position: relative;
-  min-height: 100%;
   overflow: hidden;
   border-radius: 3px;
   background: #262421;
