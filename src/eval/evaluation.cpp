@@ -1,5 +1,8 @@
 #include "evaluation.h"
+#include "mobility.h"
 #include "piece_square_tables.h"
+
+#define MAX_PHASE 24
 
 static int piece_value(Piece piece) {
     switch (piece_type(piece)) {
@@ -22,8 +25,24 @@ static int piece_value(Piece piece) {
     return 0;
 }
 
+static int piece_phase(Piece piece) {
+    switch (piece_type(piece)) {
+        case PIECE_TYPE_KNIGHT:
+        case PIECE_TYPE_BISHOP:
+            return 1;
+        case PIECE_TYPE_ROOK:
+            return 2;
+        case PIECE_TYPE_QUEEN:
+            return 4;
+        default:
+            return 0;
+    }
+}
+
 int evaluate_position(const Position *position) {
     int score = 0;
+    int phase = 0;
+    int endgame_weight;
     int square;
 
     if (position == 0) {
@@ -31,8 +50,15 @@ int evaluate_position(const Position *position) {
     }
 
     for (square = 0; square < SQUARE_COUNT; ++square) {
+        phase += piece_phase(position_piece_at(position, square));
+    }
+
+    endgame_weight = (MAX_PHASE - phase) * 256 / MAX_PHASE;
+
+    for (square = 0; square < SQUARE_COUNT; ++square) {
         Piece piece = position_piece_at(position, square);
-        int value = piece_value(piece) + piece_square_value(piece, square);
+        int value = piece_value(piece) +
+                    piece_square_value(piece, square, endgame_weight);
 
         if (piece_color(piece) == COLOR_WHITE) {
             score += value;
@@ -40,6 +66,8 @@ int evaluate_position(const Position *position) {
             score -= value;
         }
     }
+
+    score += mobility_score(position);
 
     if (position->side_to_move == COLOR_BLACK) {
         score = -score;

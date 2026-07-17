@@ -59,7 +59,7 @@ static const int QUEEN_TABLE[SQUARE_COUNT] = {
    -20,-10,-10, -5, -5,-10,-10,-20
 };
 
-static const int KING_TABLE[SQUARE_COUNT] = {
+static const int KING_MIDDLEGAME_TABLE[SQUARE_COUNT] = {
     20, 30, 10,  0,  0, 10, 30, 20,
     20, 20,  0,  0,  0,  0, 20, 20,
    -10,-20,-20,-20,-20,-20,-20,-10,
@@ -70,7 +70,18 @@ static const int KING_TABLE[SQUARE_COUNT] = {
    -30,-40,-40,-50,-50,-40,-40,-30
 };
 
-static const int *table_for_piece(Piece piece) {
+static const int KING_ENDGAME_TABLE[SQUARE_COUNT] = {
+   -50,-30,-30,-30,-30,-30,-30,-50,
+   -30,-10,  0,  0,  0,  0,-10,-30,
+   -30,  0, 20, 30, 30, 20,  0,-30,
+   -30,  0, 30, 40, 40, 30,  0,-30,
+   -30,  0, 30, 40, 40, 30,  0,-30,
+   -30,  0, 20, 30, 30, 20,  0,-30,
+   -30,-20,  0,  0,  0,  0,-20,-30,
+   -50,-40,-30,-30,-30,-30,-40,-50
+};
+
+static const int *table_for_piece(Piece piece, int endgame) {
     switch (piece_type(piece)) {
         case PIECE_TYPE_PAWN:
             return PAWN_TABLE;
@@ -83,7 +94,7 @@ static const int *table_for_piece(Piece piece) {
         case PIECE_TYPE_QUEEN:
             return QUEEN_TABLE;
         case PIECE_TYPE_KING:
-            return KING_TABLE;
+            return endgame ? KING_ENDGAME_TABLE : KING_MIDDLEGAME_TABLE;
         case PIECE_TYPE_NONE:
             return 0;
     }
@@ -91,11 +102,27 @@ static const int *table_for_piece(Piece piece) {
     return 0;
 }
 
-int piece_square_value(Piece piece, int square) {
-    const int *table = table_for_piece(piece);
+int piece_square_value(Piece piece, int square, int endgame_weight) {
+    const int *middle_table;
+    const int *endgame_table;
     int table_square;
+    int middle_value;
+    int endgame_value;
 
-    if (table == 0 || square < 0 || square >= SQUARE_COUNT) {
+    if (square < 0 || square >= SQUARE_COUNT) {
+        return 0;
+    }
+
+    if (endgame_weight < 0) {
+        endgame_weight = 0;
+    } else if (endgame_weight > 256) {
+        endgame_weight = 256;
+    }
+
+    middle_table = table_for_piece(piece, 0);
+    endgame_table = table_for_piece(piece, 1);
+
+    if (middle_table == 0 || endgame_table == 0) {
         return 0;
     }
 
@@ -105,5 +132,9 @@ int piece_square_value(Piece piece, int square) {
         table_square ^= 56;
     }
 
-    return table[table_square];
+    middle_value = middle_table[table_square];
+    endgame_value = endgame_table[table_square];
+
+    return (middle_value * (256 - endgame_weight) +
+            endgame_value * endgame_weight) / 256;
 }
