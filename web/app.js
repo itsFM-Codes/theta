@@ -45,6 +45,8 @@ let historyIndex = 0;
 let dragMoveRequest = null;
 let dragMoveApplied = false;
 let dragDropPending = false;
+let materialEvaluation = 0;
+let evaluationRequestNumber = 0;
 
 function createStartingPosition() {
   return STARTING_POSITION.map(row => [...row]);
@@ -348,6 +350,7 @@ function goToHistory(index) {
   renderBoard();
   renderMoveHistory();
   refreshAnalysis();
+  requestEvaluation();
 }
 
 function canSelectPiece(piece) {
@@ -389,6 +392,8 @@ async function requestLegalMoves(row, column, preserveBoard = false) {
       return;
     }
 
+    updateEvaluation(result.evaluation);
+    refreshAnalysis();
     legalMoves = result.moves.filter(move => move.from === from);
     if (preserveBoard) {
       refreshSquareClasses();
@@ -407,6 +412,32 @@ async function requestLegalMoves(row, column, preserveBoard = false) {
       }
     }
 
+    console.error(error);
+  }
+}
+
+async function requestEvaluation() {
+  const requestNumber = ++evaluationRequestNumber;
+
+  try {
+    const response = await fetch('/api/moves', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ fen: currentFen() })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Evaluation request failed with ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (requestNumber === evaluationRequestNumber) {
+      updateEvaluation(result.evaluation);
+      refreshAnalysis();
+    }
+  } catch (error) {
     console.error(error);
   }
 }
@@ -587,6 +618,7 @@ function applyLegalMove(move) {
   renderBoard();
   renderMoveHistory();
   refreshAnalysis();
+  requestEvaluation();
 }
 
 function handleEditorClick(row, column) {
@@ -597,6 +629,7 @@ function handleEditorClick(row, column) {
   enPassantSquare = '-';
   resetHistory();
   renderBoard();
+  updateEvaluation(0);
 }
 
 async function handleSquareClick(event) {
@@ -637,14 +670,22 @@ function formatEvaluation(value) {
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)}`;
 }
 
-function refreshAnalysis() {
-  const evaluation = Math.random() * 0.8 - 0.4;
-  const evaluationLabel = formatEvaluation(evaluation);
-  const depth = 12 + Math.floor(Math.random() * 8);
+function updateEvaluation(evaluation) {
+  const bar = document.querySelector('.evaluation');
+  const fill = document.querySelector('#eval-fill');
+  const label = document.querySelector('#eval-label');
+  const whitePercent = Math.max(0, Math.min(100, 50 + evaluation / 20));
 
-  document.querySelector('#eval-label').textContent = evaluationLabel;
-  document.querySelector('#eval-fill').style.height = `${50 - evaluation * 12}%`;
-  document.querySelector('#depth').textContent = `Depth ${depth}`;
+  materialEvaluation = evaluation;
+  label.textContent = formatEvaluation(evaluation / 100);
+  fill.style.height = `${whitePercent}%`;
+  bar.classList.toggle('flipped', isFlipped);
+}
+
+function refreshAnalysis() {
+  const evaluationLabel = formatEvaluation(materialEvaluation / 100);
+
+  document.querySelector('#depth').textContent = 'Material';
 
   linesElement.innerHTML = DEMO_LINES
     .map(([score, moves], index) => {
@@ -718,6 +759,7 @@ function resetBoard() {
   resetHistory();
   renderBoard();
   refreshAnalysis();
+  requestEvaluation();
 }
 
 function clearBoard() {
@@ -731,6 +773,7 @@ function clearBoard() {
   moveRequestNumber++;
   resetHistory();
   renderBoard();
+  updateEvaluation(0);
 }
 
 for (const button of modeButtons) {
@@ -739,6 +782,7 @@ for (const button of modeButtons) {
 
 document.querySelector('#flip').addEventListener('click', () => {
   isFlipped = !isFlipped;
+  updateEvaluation(materialEvaluation);
   renderBoard();
 });
 
@@ -774,3 +818,4 @@ renderEditorTray();
 resetHistory();
 renderBoard();
 refreshAnalysis();
+requestEvaluation();

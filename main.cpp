@@ -5,6 +5,7 @@
 #include "src/chess/fen.h"
 #include "src/chess/movegen.h"
 #include "src/config/config.h"
+#include "src/eval/evaluation.h"
 
 #define CONFIG_FILE "config/config.conf"
 
@@ -32,6 +33,7 @@ static void square_name(int square, char name[3]) {
 static int print_legal_moves(const char *fen) {
     Position position;
     MoveList moves;
+    int evaluation;
     int index;
 
     if (!position_from_fen(&position, fen)) {
@@ -40,6 +42,12 @@ static int print_legal_moves(const char *fen) {
     }
 
     generate_legal_moves(&position, &moves);
+    evaluation = evaluate_position(&position);
+
+    if (position.side_to_move == COLOR_BLACK) {
+        evaluation = -evaluation;
+    }
+
     printf("{\"moves\":[");
 
     for (index = 0; index < moves.count; ++index) {
@@ -69,7 +77,7 @@ static int print_legal_moves(const char *fen) {
         }
     }
 
-    printf("],\"count\":%d}\n", moves.count);
+    printf("],\"count\":%d,\"evaluation\":%d}\n", moves.count, evaluation);
     return 1;
 }
 
