@@ -4,6 +4,7 @@
 #include "quiescence.h"
 
 #include "src/chess/movegen.h"
+#include "src/chess/zobrist.h"
 #include "src/eval/evaluation.h"
 
 static int negamax(
@@ -16,9 +17,17 @@ static int negamax(
     SearchContext *context
 ) {
     MoveList moves;
+    Move table_move;
+    uint64_t key;
+    int table_score;
+    int original_alpha = alpha;
     int index;
 
     clear_variation(variation);
+    table_move.from = NO_SQUARE;
+    table_move.to = NO_SQUARE;
+    table_move.promotion = PIECE_NONE;
+    table_move.flags = MOVE_FLAG_NONE;
 
     if (search_has_stopped(context)) {
         return 0;
@@ -28,8 +37,25 @@ static int negamax(
         return quiescence_search(position, alpha, beta, ply, context);
     }
 
+    key = position_key(position);
+    if (probe_transposition_table(
+            &context->table,
+            key,
+            depth,
+            alpha,
+            beta,
+            &table_score,
+            &table_move
+        )) {
+        if (is_valid_square(table_move.from) && is_valid_square(table_move.to)) {
+            update_variation(variation, table_move, 0);
+        }
+
+        return table_score;
+    }
+
     generate_legal_moves(position, &moves);
-    order_moves(position, &moves, 1, context, ply);
+    order_moves(position, &moves, 1, context, ply, &table_move);
 
     if (moves.count == 0) {
         if (position_is_in_check(position)) {
@@ -77,6 +103,14 @@ static int negamax(
                 move
             );
             update_variation(variation, move, &child_variation);
+            store_transposition_table(
+                &context->table,
+                key,
+                depth,
+                beta,
+                TRANSPOSITION_LOWER_BOUND,
+                move
+            );
             return beta;
         }
 
@@ -85,6 +119,17 @@ static int negamax(
             update_variation(variation, move, &child_variation);
         }
     }
+
+    store_transposition_table(
+        &context->table,
+        key,
+        depth,
+        alpha,
+        alpha <= original_alpha
+            ? TRANSPOSITION_UPPER_BOUND
+            : TRANSPOSITION_EXACT,
+        variation->count > 0 ? variation->moves[0] : table_move
+    );
 
     return alpha;
 }
@@ -96,11 +141,18 @@ static int search_position_with_variation(
     SearchContext *context
 ) {
     MoveList moves;
+    Move table_move;
+    uint64_t key;
+    int table_score;
     int alpha = -SEARCH_INFINITY;
     int beta = SEARCH_INFINITY;
     int index;
 
     clear_variation(variation);
+    table_move.from = NO_SQUARE;
+    table_move.to = NO_SQUARE;
+    table_move.promotion = PIECE_NONE;
+    table_move.flags = MOVE_FLAG_NONE;
 
     if (position == 0) {
         return 0;
@@ -114,8 +166,25 @@ static int search_position_with_variation(
         return evaluate_position(position);
     }
 
+    key = position_key(position);
+    if (probe_transposition_table(
+            &context->table,
+            key,
+            depth,
+            alpha,
+            beta,
+            &table_score,
+            &table_move
+        )) {
+        if (is_valid_square(table_move.from) && is_valid_square(table_move.to)) {
+            update_variation(variation, table_move, 0);
+        }
+
+        return table_score;
+    }
+
     generate_legal_moves(position, &moves);
-    order_moves(position, &moves, 1, context, 0);
+    order_moves(position, &moves, 1, context, 0, &table_move);
 
     if (moves.count == 0) {
         if (position_is_in_check(position)) {
@@ -160,6 +229,15 @@ static int search_position_with_variation(
         }
     }
 
+    store_transposition_table(
+        &context->table,
+        key,
+        depth,
+        alpha,
+        TRANSPOSITION_EXACT,
+        variation->count > 0 ? variation->moves[0] : table_move
+    );
+
     return alpha;
 }
 
@@ -181,6 +259,8 @@ int search_position(Position *position, int depth, Move *best_move) {
             *best_move = variation.moves[0];
         }
     }
+
+    destroy_search_context(&context);
 
     return score;
 }
@@ -256,5 +336,6 @@ int search_iterative(
         }
     }
 
+    destroy_search_context(&context);
     return completed_score;
 }

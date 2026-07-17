@@ -100,6 +100,21 @@ echo [TEST]  evaluation_test
 build\evaluation_test.exe
 if errorlevel 1 exit /b 1
 
+echo [BUILD] transposition_table_test
+%CXX% %CXXFLAGS% ^
+    tests\transposition_table_test.cpp ^
+    src\chess\board.cpp ^
+    src\chess\position.cpp ^
+    src\chess\move.cpp ^
+    src\chess\zobrist.cpp ^
+    src\engine\transposition_table.cpp ^
+    -o build\transposition_table_test.exe
+if errorlevel 1 exit /b 1
+
+echo [TEST]  transposition_table_test
+build\transposition_table_test.exe
+if errorlevel 1 exit /b 1
+
 echo [BUILD] search_test
 %CXX% %CXXFLAGS% ^
     tests\search_test.cpp ^
@@ -107,10 +122,12 @@ echo [BUILD] search_test
     src\chess\position.cpp ^
     src\chess\move.cpp ^
     src\chess\movegen.cpp ^
+    src\chess\zobrist.cpp ^
     src\engine\search.cpp ^
     src\engine\search_context.cpp ^
     src\engine\move_ordering.cpp ^
     src\engine\quiescence.cpp ^
+    src\engine\transposition_table.cpp ^
     src\eval\evaluation.cpp ^
     -o build\search_test.exe
 if errorlevel 1 exit /b 1

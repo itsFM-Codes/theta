@@ -18,10 +18,17 @@ void initialize_search_context(SearchContext *context, int time_limit_ms) {
     context->time_limit_ms = time_limit_ms;
     context->stopped = 0;
     memset(context->history, 0, sizeof(context->history));
+    initialize_transposition_table(&context->table);
 
     for (ply = 0; ply < MAX_KILLER_PLY; ++ply) {
         clear_move(&context->killer_moves[ply][0]);
         clear_move(&context->killer_moves[ply][1]);
+    }
+}
+
+void destroy_search_context(SearchContext *context) {
+    if (context != 0) {
+        destroy_transposition_table(&context->table);
     }
 }
 

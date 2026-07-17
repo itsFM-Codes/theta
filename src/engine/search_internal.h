@@ -4,6 +4,7 @@
 #include <time.h>
 
 #include "search.h"
+#include "transposition_table.h"
 
 #define MAX_KILLER_PLY 64
 
@@ -13,9 +14,11 @@ typedef struct SearchContext {
     int stopped;
     Move killer_moves[MAX_KILLER_PLY][2];
     int history[2][SQUARE_COUNT][SQUARE_COUNT];
+    TranspositionTable table;
 } SearchContext;
 
 void initialize_search_context(SearchContext *context, int time_limit_ms);
+void destroy_search_context(SearchContext *context);
 int search_has_stopped(SearchContext *context);
 
 int position_is_in_check(const Position *position);

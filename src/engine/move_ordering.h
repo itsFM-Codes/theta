@@ -8,7 +8,8 @@ void order_moves(
     MoveList *moves,
     int order_checks,
     const SearchContext *context,
-    int ply
+    int ply,
+    const Move *table_move
 );
 
 void record_quiet_cutoff(

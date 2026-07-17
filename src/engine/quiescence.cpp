@@ -43,7 +43,7 @@ int quiescence_search(
         }
     }
 
-    order_moves(position, &moves, 0, context, ply);
+    order_moves(position, &moves, 0, context, ply, 0);
 
     for (index = 0; index < moves.count; ++index) {
         Move move = moves.moves[index];

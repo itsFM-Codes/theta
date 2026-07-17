@@ -6,6 +6,7 @@
 #define CHECK_MOVE_SCORE 5000
 #define KILLER_MOVE_SCORE 4000
 #define MAX_HISTORY_SCORE 3000
+#define TABLE_MOVE_SCORE 20000
 
 static int moves_are_equal(Move first, Move second) {
     return first.from == second.from &&
@@ -85,10 +86,15 @@ static int move_order_score(
     Move move,
     int order_checks,
     const SearchContext *context,
-    int ply
+    int ply,
+    const Move *table_move
 ) {
     Piece attacker;
     Piece victim;
+
+    if (table_move != 0 && moves_are_equal(move, *table_move)) {
+        return TABLE_MOVE_SCORE;
+    }
 
     if ((move.flags & MOVE_FLAG_CAPTURE) == 0) {
         int killer_score;
@@ -121,7 +127,8 @@ void order_moves(
     MoveList *moves,
     int order_checks,
     const SearchContext *context,
-    int ply
+    int ply,
+    const Move *table_move
 ) {
     int index;
     int scores[MAX_MOVES];
@@ -136,7 +143,8 @@ void order_moves(
             moves->moves[index],
             order_checks,
             context,
-            ply
+            ply,
+            table_move
         );
     }
 
