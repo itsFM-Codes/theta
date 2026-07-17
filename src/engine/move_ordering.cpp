@@ -1,5 +1,7 @@
 #include "move_ordering.h"
 
+#include "static_exchange.h"
+
 #include "src/chess/movegen.h"
 #include "src/eval/evaluation.h"
 
@@ -119,7 +121,8 @@ static int move_order_score(
         victim = position_piece_at(position, move.to);
     }
 
-    return 10000 + piece_value(victim) * 16 - piece_value(attacker);
+    return 10000 + static_exchange_evaluation(position, move) * 16 +
+           piece_value(victim) - piece_value(attacker);
 }
 
 void order_moves(

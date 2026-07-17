@@ -120,6 +120,21 @@ echo [TEST]  transposition_table_test
 build\transposition_table_test.exe
 if errorlevel 1 exit /b 1
 
+echo [BUILD] static_exchange_test
+%CXX% %CXXFLAGS% ^
+    tests\static_exchange_test.cpp ^
+    src\chess\board.cpp ^
+    src\chess\position.cpp ^
+    src\chess\move.cpp ^
+    src\chess\movegen.cpp ^
+    src\engine\static_exchange.cpp ^
+    -o build\static_exchange_test.exe
+if errorlevel 1 exit /b 1
+
+echo [TEST]  static_exchange_test
+build\static_exchange_test.exe
+if errorlevel 1 exit /b 1
+
 echo [BUILD] search_test
 %CXX% %CXXFLAGS% ^
     tests\search_test.cpp ^
@@ -132,6 +147,7 @@ echo [BUILD] search_test
     src\engine\search_context.cpp ^
     src\engine\move_ordering.cpp ^
     src\engine\quiescence.cpp ^
+    src\engine\static_exchange.cpp ^
     src\engine\transposition_table.cpp ^
     src\eval\evaluation.cpp ^
     src\eval\king_safety.cpp ^

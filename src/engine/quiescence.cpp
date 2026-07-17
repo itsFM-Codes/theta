@@ -1,6 +1,7 @@
 #include "quiescence.h"
 
 #include "move_ordering.h"
+#include "static_exchange.h"
 
 #include "src/chess/movegen.h"
 #include "src/eval/evaluation.h"
@@ -92,6 +93,11 @@ int quiescence_search(
 
         if (!in_check && (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
             stand_pat + capture_value(position, move) + DELTA_MARGIN < alpha) {
+            continue;
+        }
+
+        if (!in_check && (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
+            static_exchange_evaluation(position, move) < 0) {
             continue;
         }
 
