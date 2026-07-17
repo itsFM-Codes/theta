@@ -25,13 +25,17 @@ typedef struct TranspositionEntry {
 typedef struct TranspositionTable {
     TranspositionEntry *entries;
     int count;
+    uint64_t probes;
+    uint64_t key_hits;
+    uint64_t score_cutoffs;
+    uint64_t stores;
 } TranspositionTable;
 
 void initialize_transposition_table(TranspositionTable *table);
 void destroy_transposition_table(TranspositionTable *table);
 
 int probe_transposition_table(
-    const TranspositionTable *table,
+    TranspositionTable *table,
     uint64_t key,
     int depth,
     int alpha,
@@ -39,6 +43,8 @@ int probe_transposition_table(
     int *score,
     Move *best_move
 );
+
+int transposition_table_hashfull(const TranspositionTable *table);
 
 void store_transposition_table(
     TranspositionTable *table,

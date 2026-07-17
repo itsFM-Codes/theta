@@ -92,8 +92,17 @@ void search_get_statistics(
 
     statistics->nodes = context == 0 ? 0 : context->nodes;
     statistics->quiescence_nodes = context == 0 ? 0 : context->quiescence_nodes;
+    statistics->transposition_probes = context == 0 ? 0 : context->table.probes;
+    statistics->transposition_key_hits = context == 0 ? 0 : context->table.key_hits;
+    statistics->transposition_cutoffs = context == 0
+        ? 0
+        : context->table.score_cutoffs;
+    statistics->transposition_stores = context == 0 ? 0 : context->table.stores;
     statistics->selective_depth = context == 0 ? 0 : context->selective_depth;
     statistics->elapsed_ms = search_elapsed_ms(context);
+    statistics->hashfull = context == 0
+        ? 0
+        : transposition_table_hashfull(&context->table);
 }
 
 int search_push_position(SearchContext *context, const Position *position) {

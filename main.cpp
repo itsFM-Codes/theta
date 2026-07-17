@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <iostream>
 
 #include "src/chess/fen.h"
 #include "src/chess/movegen.h"
@@ -10,6 +11,11 @@
 #include "src/uci/uci.h"
 
 #define CONFIG_FILE "config/config.conf"
+#define BENCH_DEPTH 5
+
+typedef struct BenchSearchResult {
+    SearchStatistics statistics;
+} BenchSearchResult;
 
 static char promotion_character(Piece piece) {
     switch (piece_type(piece)) {
@@ -52,6 +58,96 @@ static void print_move_json(Move move) {
     } else {
         printf("\"promotion\":null}");
     }
+}
+
+static void move_to_uci(Move move, char text[6]) {
+    char promotion = promotion_character(move.promotion);
+
+    if (!is_valid_square(move.from) || !is_valid_square(move.to)) {
+        strcpy(text, "0000");
+        return;
+    }
+
+    text[0] = (char)('a' + square_column(move.from));
+    text[1] = (char)('8' - square_row(move.from));
+    text[2] = (char)('a' + square_column(move.to));
+    text[3] = (char)('8' - square_row(move.to));
+    text[4] = promotion;
+    text[promotion == '\0' ? 4 : 5] = '\0';
+}
+
+static void capture_bench_statistics(
+    int depth,
+    int score,
+    const PrincipalVariation *variation,
+    const SearchStatistics *statistics,
+    void *user_data
+) {
+    BenchSearchResult *result = (BenchSearchResult *)user_data;
+
+    (void)depth;
+    (void)score;
+    (void)variation;
+    if (result != 0 && statistics != 0) {
+        result->statistics = *statistics;
+    }
+}
+
+static int run_benchmark(void) {
+    static const char *positions[] = {
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "r3k2r/p1ppqpb1/bn2pnp1/2pP4/1p2P3/2N2N2/PPQ1BPPP/R3K2R w KQkq - 0 1",
+        "8/2p5/3p4/KP1P4/8/4k3/8/8 w - - 0 1",
+        "4k3/8/8/3q4/8/8/4Q3/4K3 w - - 0 1"
+    };
+    uint64_t total_nodes = 0;
+    int total_time_ms = 0;
+    int index;
+
+    printf("bench depth %d positions %d\n", BENCH_DEPTH,
+           (int)(sizeof(positions) / sizeof(positions[0])));
+
+    for (index = 0; index < (int)(sizeof(positions) / sizeof(positions[0]));
+         ++index) {
+        Position position;
+        Move best_move;
+        PrincipalVariation variation;
+        BenchSearchResult result = {};
+        int completed_depth;
+        int score;
+        char move[6];
+
+        if (!position_from_fen(&position, positions[index])) {
+            fprintf(stderr, "Error: Invalid benchmark position %d\n", index + 1);
+            return 0;
+        }
+
+        score = search_iterative_with_callback(
+            &position,
+            BENCH_DEPTH,
+            0,
+            &best_move,
+            &variation,
+            &completed_depth,
+            capture_bench_statistics,
+            &result
+        );
+        move_to_uci(best_move, move);
+        total_nodes += result.statistics.nodes;
+        total_time_ms += result.statistics.elapsed_ms;
+
+        printf("position %d depth %d score %d bestmove %s nodes ",
+               index + 1, completed_depth, score, move);
+        std::cout << result.statistics.nodes << '\n';
+    }
+
+    printf("total nodes ");
+    std::cout << total_nodes << " time " << total_time_ms << " nps "
+              << (total_time_ms > 0
+                  ? total_nodes * 1000u / (uint64_t)total_time_ms
+                  : 0)
+              << '\n';
+    return 1;
 }
 
 static int print_legal_moves(const char *fen) {
@@ -179,6 +275,10 @@ int main(int argc, char **argv) {
 
     if (argc == 1) {
         return run_uci() ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (argc == 2 && strcmp(argv[1], "bench") == 0) {
+        return run_benchmark() ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
     if (argc == 3 && strcmp(argv[1], "moves") == 0) {

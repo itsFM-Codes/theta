@@ -13,6 +13,10 @@ void initialize_transposition_table(TranspositionTable *table) {
         sizeof(TranspositionEntry)
     );
     table->count = table->entries == 0 ? 0 : TRANSPOSITION_TABLE_SIZE;
+    table->probes = 0;
+    table->key_hits = 0;
+    table->score_cutoffs = 0;
+    table->stores = 0;
 }
 
 void destroy_transposition_table(TranspositionTable *table) {
@@ -23,10 +27,14 @@ void destroy_transposition_table(TranspositionTable *table) {
     free(table->entries);
     table->entries = 0;
     table->count = 0;
+    table->probes = 0;
+    table->key_hits = 0;
+    table->score_cutoffs = 0;
+    table->stores = 0;
 }
 
 int probe_transposition_table(
-    const TranspositionTable *table,
+    TranspositionTable *table,
     uint64_t key,
     int depth,
     int alpha,
@@ -40,11 +48,15 @@ int probe_transposition_table(
         return 0;
     }
 
+    table->probes++;
+
     entry = &table->entries[key % (uint64_t)table->count];
 
     if (!entry->is_valid || entry->key != key) {
         return 0;
     }
+
+    table->key_hits++;
 
     if (best_move != 0) {
         *best_move = entry->best_move;
@@ -60,6 +72,8 @@ int probe_transposition_table(
         if (score != 0) {
             *score = entry->score;
         }
+
+        table->score_cutoffs++;
 
         return 1;
     }
@@ -93,4 +107,22 @@ void store_transposition_table(
     entry->depth = depth;
     entry->flag = flag;
     entry->is_valid = 1;
+    table->stores++;
+}
+
+int transposition_table_hashfull(const TranspositionTable *table) {
+    int index;
+    int occupied = 0;
+
+    if (table == 0 || table->entries == 0 || table->count == 0) {
+        return 0;
+    }
+
+    for (index = 0; index < table->count; ++index) {
+        if (table->entries[index].is_valid) {
+            occupied++;
+        }
+    }
+
+    return occupied * 1000 / table->count;
 }

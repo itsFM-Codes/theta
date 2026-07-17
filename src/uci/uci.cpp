@@ -243,6 +243,7 @@ static void print_search_info(
     std::cout << (statistics == 0 ? 0 : statistics->nodes)
               << " nps " << nps
               << " time " << (statistics == 0 ? 0 : statistics->elapsed_ms)
+              << " hashfull " << (statistics == 0 ? 0 : statistics->hashfull)
               << " pv";
 
     for (index = 0; index < variation->count; ++index) {

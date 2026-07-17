@@ -58,6 +58,11 @@ static void test_exact_table_entry(void) {
     assert(score == 87);
     assert(stored_move.from == move.from);
     assert(stored_move.to == move.to);
+    assert(table.probes == 1);
+    assert(table.key_hits == 1);
+    assert(table.score_cutoffs == 1);
+    assert(table.stores == 1);
+    assert(transposition_table_hashfull(&table) == 0);
 
     destroy_transposition_table(&table);
 }
@@ -87,6 +92,9 @@ static void test_bound_table_entry(void) {
         0
     ));
     assert(score == 50);
+    assert(table.probes == 1);
+    assert(table.key_hits == 1);
+    assert(table.score_cutoffs == 1);
 
     destroy_transposition_table(&table);
 }

@@ -16,8 +16,13 @@ typedef struct PrincipalVariation {
 typedef struct SearchStatistics {
     uint64_t nodes;
     uint64_t quiescence_nodes;
+    uint64_t transposition_probes;
+    uint64_t transposition_key_hits;
+    uint64_t transposition_cutoffs;
+    uint64_t transposition_stores;
     int selective_depth;
     int elapsed_ms;
+    int hashfull;
 } SearchStatistics;
 
 typedef void (*SearchInfoCallback)(
