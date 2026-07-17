@@ -4,6 +4,7 @@
 #include "src/eval/king_safety.h"
 #include "src/eval/mobility.h"
 #include "src/eval/pawn_structure.h"
+#include "src/eval/piece_activity.h"
 #include "src/eval/piece_square_tables.h"
 
 static void test_starting_position(void) {
@@ -128,6 +129,33 @@ static void test_king_safety(void) {
            king_safety_score(&exposed_king, 0));
 }
 
+static void test_piece_activity(void) {
+    Position bishop_pair;
+    Position single_bishop;
+    Position open_file_rook;
+    Position blocked_rook;
+
+    clear_position(&bishop_pair);
+    position_set_piece(&bishop_pair, make_square(7, 2), PIECE_WHITE_BISHOP);
+    position_set_piece(&bishop_pair, make_square(7, 5), PIECE_WHITE_BISHOP);
+
+    clear_position(&single_bishop);
+    position_set_piece(&single_bishop, make_square(7, 2), PIECE_WHITE_BISHOP);
+
+    assert(piece_activity_score(&bishop_pair) >
+           piece_activity_score(&single_bishop));
+
+    clear_position(&open_file_rook);
+    position_set_piece(&open_file_rook, make_square(7, 3), PIECE_WHITE_ROOK);
+
+    clear_position(&blocked_rook);
+    position_set_piece(&blocked_rook, make_square(7, 3), PIECE_WHITE_ROOK);
+    position_set_piece(&blocked_rook, make_square(6, 3), PIECE_WHITE_PAWN);
+
+    assert(piece_activity_score(&open_file_rook) >
+           piece_activity_score(&blocked_rook));
+}
+
 int main(void) {
     test_starting_position();
     test_side_to_move_score();
@@ -137,5 +165,6 @@ int main(void) {
     test_bishop_mobility();
     test_pawn_structure();
     test_king_safety();
+    test_piece_activity();
     return 0;
 }

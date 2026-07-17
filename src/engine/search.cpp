@@ -7,6 +7,36 @@
 #include "src/chess/zobrist.h"
 #include "src/eval/evaluation.h"
 
+static int has_non_pawn_material(const Position *position, Color color) {
+    int square;
+
+    for (square = 0; square < SQUARE_COUNT; ++square) {
+        Piece piece = position_piece_at(position, square);
+        PieceType type = piece_type(piece);
+
+        if (piece_color(piece) == color &&
+            type != PIECE_TYPE_PAWN && type != PIECE_TYPE_KING &&
+            type != PIECE_TYPE_NONE) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int move_gives_check(Position *position, Move move) {
+    UndoState undo;
+    int gives_check;
+
+    if (!make_move(position, move, &undo)) {
+        return 0;
+    }
+
+    gives_check = position_is_in_check(position);
+    undo_move(position, move, &undo);
+    return gives_check;
+}
+
 static int negamax(
     Position *position,
     int depth,
@@ -20,6 +50,7 @@ static int negamax(
     Move table_move;
     uint64_t key;
     int table_score;
+    int in_check;
     int original_alpha = alpha;
     int index;
 
@@ -39,6 +70,38 @@ static int negamax(
 
     if (depth <= 0) {
         return quiescence_search(position, alpha, beta, ply, context);
+    }
+
+    in_check = position_is_in_check(position);
+
+    if (depth >= 3 && !in_check && beta < SEARCH_INFINITY &&
+        has_non_pawn_material(position, position->side_to_move)) {
+        Position null_position = *position;
+        PrincipalVariation null_variation;
+        int null_score;
+
+        null_position.side_to_move = opposite_color(null_position.side_to_move);
+        null_position.en_passant_square = NO_SQUARE;
+        null_position.halfmove_clock++;
+        search_push_position(context, &null_position);
+        null_score = -negamax(
+            &null_position,
+            depth - 3,
+            -beta,
+            -beta + 1,
+            ply + 1,
+            &null_variation,
+            context
+        );
+        search_pop_position(context);
+
+        if (search_has_stopped(context)) {
+            return 0;
+        }
+
+        if (null_score >= beta) {
+            return beta;
+        }
     }
 
     key = position_key(position);
@@ -73,11 +136,16 @@ static int negamax(
         Move move = moves.moves[index];
         PrincipalVariation child_variation;
         UndoState undo;
+        int search_depth = depth - 1;
+        int reduced = 0;
+        int gives_check;
         int score;
 
         if (search_has_stopped(context)) {
             return 0;
         }
+
+        gives_check = move_gives_check(position, move);
 
         if (!make_move(position, move, &undo)) {
             continue;
@@ -85,15 +153,38 @@ static int negamax(
 
         search_push_position(context, position);
 
-        score = -negamax(
-            position,
-            depth - 1,
-            -beta,
-            -alpha,
-            ply + 1,
-            &child_variation,
-            context
-        );
+        if (depth >= 3 && index >= 4 &&
+            (move.flags & MOVE_FLAG_CAPTURE) == 0 &&
+            !gives_check) {
+            search_depth--;
+            reduced = 1;
+        }
+
+        if (index == 0) {
+            score = -negamax(
+                position, search_depth, -beta, -alpha, ply + 1,
+                &child_variation, context
+            );
+        } else {
+            score = -negamax(
+                position, search_depth, -alpha - 1, -alpha, ply + 1,
+                &child_variation, context
+            );
+
+            if (score > alpha && score < beta && reduced) {
+                score = -negamax(
+                    position, depth - 1, -alpha - 1, -alpha, ply + 1,
+                    &child_variation, context
+                );
+            }
+
+            if (score > alpha && score < beta) {
+                score = -negamax(
+                    position, depth - 1, -beta, -alpha, ply + 1,
+                    &child_variation, context
+                );
+            }
+        }
         search_pop_position(context);
         undo_move(position, move, &undo);
 
