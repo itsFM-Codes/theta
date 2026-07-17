@@ -49,6 +49,7 @@ let dragMoveApplied = false;
 let dragDropPending = false;
 let materialEvaluation = 0;
 let evaluationRequestNumber = 0;
+let searchAbortController = null;
 let analysisDepth = searchDepth;
 let principalVariation = [];
 
@@ -433,13 +434,21 @@ async function requestLegalMoves(row, column, preserveBoard = false) {
 
 async function requestSearch() {
   const requestNumber = ++evaluationRequestNumber;
+  let buffer = '';
+
+  if (searchAbortController) {
+    searchAbortController.abort();
+  }
+
+  searchAbortController = new AbortController();
 
   try {
-    const response = await fetch('/api/search', {
+    const response = await fetch('/api/search-stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
+      signal: searchAbortController.signal,
       body: JSON.stringify({
         fen: currentFen(),
         depth: searchDepth,
@@ -451,16 +460,79 @@ async function requestSearch() {
       throw new Error(`Search request failed with ${response.status}`);
     }
 
-    const result = await response.json();
-    if (requestNumber === evaluationRequestNumber) {
-      updateEvaluation(result.evaluation);
-      analysisDepth = result.depth;
-      principalVariation = result.pv || [];
-      refreshAnalysis();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    for (;;) {
+      const result = await reader.read();
+
+      if (result.done) {
+        break;
+      }
+
+      buffer += decoder.decode(result.value, { stream: true });
+
+      for (;;) {
+        const lineEnd = buffer.indexOf('\n');
+        let line;
+        let update;
+
+        if (lineEnd === -1) {
+          break;
+        }
+
+        line = buffer.slice(0, lineEnd);
+        buffer = buffer.slice(lineEnd + 1);
+
+        if (!line) {
+          continue;
+        }
+
+        update = JSON.parse(line);
+        if (update.error) {
+          throw new Error(update.error);
+        }
+
+        if (requestNumber === evaluationRequestNumber) {
+          updateEvaluation(update.evaluation);
+          analysisDepth = update.depth;
+          principalVariation = update.pv.map(uciMoveToMove);
+          refreshAnalysis();
+        }
+      }
     }
   } catch (error) {
-    console.error(error);
+    if (error.name !== 'AbortError') {
+      console.error(error);
+    }
   }
+}
+
+function uciMoveToMove(text) {
+  const from = text.slice(0, 2);
+  const to = text.slice(2, 4);
+  const source = squareCoordinates(from);
+  const target = squareCoordinates(to);
+  const piece = board[source.row]?.[source.column] || '.';
+  let flags = 0;
+
+  if (piece.toLowerCase() === 'k' &&
+      Math.abs(source.column - target.column) === 2) {
+    flags = target.column > source.column
+      ? MOVE_FLAG_CASTLE_KINGSIDE
+      : MOVE_FLAG_CASTLE_QUEENSIDE;
+  }
+
+  if (text.length === 5) {
+    flags |= MOVE_FLAG_PROMOTION;
+  }
+
+  return {
+    from,
+    to,
+    flags,
+    promotion: text.length === 5 ? text[4] : null
+  };
 }
 
 function handlePieceDragStart(event) {

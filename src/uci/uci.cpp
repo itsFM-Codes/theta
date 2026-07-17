@@ -214,6 +214,26 @@ static int parse_non_negative(const char *text, int *value) {
     return 1;
 }
 
+static void print_search_info(
+    int depth,
+    int score,
+    const PrincipalVariation *variation,
+    void *user_data
+) {
+    int index;
+
+    (void)user_data;
+    printf("info depth %d score cp %d pv", depth, score);
+
+    for (index = 0; index < variation->count; ++index) {
+        putchar(' ');
+        print_uci_move(variation->moves[index]);
+    }
+
+    putchar('\n');
+    fflush(stdout);
+}
+
 static void search_from_command(Position *position, char *arguments) {
     char *cursor = arguments;
     char *token;
@@ -225,8 +245,6 @@ static void search_from_command(Position *position, char *arguments) {
     int white_time = 0;
     int black_time = 0;
     int value;
-    int score;
-    int index;
 
     while ((token = next_token(&cursor)) != 0) {
         if (strcmp(token, "depth") == 0) {
@@ -272,23 +290,16 @@ static void search_from_command(Position *position, char *arguments) {
         }
     }
 
-    score = search_iterative(
+    search_iterative_with_callback(
         position,
         depth,
         time_limit_ms,
         &best_move,
         &variation,
-        &completed_depth
+        &completed_depth,
+        print_search_info,
+        0
     );
-
-    printf("info depth %d score cp %d pv", completed_depth, score);
-
-    for (index = 0; index < variation.count; ++index) {
-        putchar(' ');
-        print_uci_move(variation.moves[index]);
-    }
-
-    putchar('\n');
     printf("bestmove ");
 
     if (is_valid_square(best_move.from) && is_valid_square(best_move.to)) {

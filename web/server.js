@@ -1,7 +1,7 @@
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 
 const HOST = '127.0.0.1';
 const PORT = 8042;
@@ -111,6 +111,127 @@ function handleEngineRequest(request, response, command) {
   });
 }
 
+function parseUciInfo(line) {
+  const match = line.match(/^info depth (\d+) score cp (-?\d+) pv(?: (.*))?$/);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    depth: Number(match[1]),
+    evaluation: Number(match[2]),
+    pv: match[3] ? match[3].trim().split(/\s+/) : []
+  };
+}
+
+function handleSearchStream(request, response) {
+  readRequestBody(request, body => {
+    let value;
+    let engine;
+    let output = '';
+    let errorOutput = '';
+    let timeout;
+    let closed = false;
+
+    try {
+      value = JSON.parse(body);
+    } catch (error) {
+      sendJson(response, 400, { error: 'Invalid request' });
+      return;
+    }
+
+    if (typeof value.fen !== 'string' ||
+        value.fen.length > 256 ||
+        /[\r\n]/.test(value.fen) ||
+        !Number.isInteger(value.depth) ||
+        value.depth < 1 || value.depth > 8 ||
+        !Number.isInteger(value.timeMs) ||
+        value.timeMs < 0 || value.timeMs > 60000) {
+      sendJson(response, 400, { error: 'Invalid search request' });
+      return;
+    }
+
+    if (!fs.existsSync(ENGINE_PATH)) {
+      sendJson(response, 503, { error: 'Engine is not built' });
+      return;
+    }
+
+    response.writeHead(200, {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive'
+    });
+
+    engine = spawn(ENGINE_PATH, [], {
+      cwd: PROJECT_DIRECTORY,
+      windowsHide: true
+    });
+
+    engine.stdout.setEncoding('utf8');
+    engine.stderr.setEncoding('utf8');
+
+    engine.stdout.on('data', chunk => {
+      output += chunk;
+
+      for (;;) {
+        const lineEnd = output.indexOf('\n');
+        let line;
+        let info;
+
+        if (lineEnd === -1) {
+          break;
+        }
+
+        line = output.slice(0, lineEnd).trim();
+        output = output.slice(lineEnd + 1);
+        info = parseUciInfo(line);
+
+        if (info && !closed) {
+          response.write(`${JSON.stringify(info)}\n`);
+        }
+      }
+    });
+
+    engine.stderr.on('data', chunk => {
+      errorOutput += chunk;
+    });
+
+    engine.on('error', error => {
+      if (!closed) {
+        response.write(`${JSON.stringify({ error: error.message })}\n`);
+      }
+    });
+
+    engine.on('close', code => {
+      clearTimeout(timeout);
+
+      if (!closed && code !== 0 && errorOutput.trim()) {
+        response.write(`${JSON.stringify({ error: errorOutput.trim() })}\n`);
+      }
+
+      if (!closed) {
+        response.end();
+      }
+    });
+
+    response.on('close', () => {
+      closed = true;
+      engine.kill();
+    });
+
+    timeout = setTimeout(() => engine.kill(), value.timeMs + 1000);
+    engine.stdin.end([
+      'uci',
+      'isready',
+      `position fen ${value.fen}`,
+      `go depth ${value.depth} movetime ${value.timeMs}`,
+      'quit',
+      ''
+    ].join('\n'));
+  });
+}
+
 function handleStaticRequest(request, response) {
   const requestPath = request.url === '/'
     ? '/index.html'
@@ -146,6 +267,11 @@ const server = http.createServer((request, response) => {
 
   if (request.method === 'POST' && request.url === '/api/search') {
     handleEngineRequest(request, response, 'search');
+    return;
+  }
+
+  if (request.method === 'POST' && request.url === '/api/search-stream') {
+    handleSearchStream(request, response);
     return;
   }
 

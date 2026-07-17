@@ -13,6 +13,13 @@ typedef struct PrincipalVariation {
     int count;
 } PrincipalVariation;
 
+typedef void (*SearchInfoCallback)(
+    int depth,
+    int score,
+    const PrincipalVariation *variation,
+    void *user_data
+);
+
 int search_position(Position *position, int depth, Move *best_move);
 int search_iterative(
     Position *position,
@@ -21,6 +28,16 @@ int search_iterative(
     Move *best_move,
     PrincipalVariation *variation,
     int *completed_depth
+);
+int search_iterative_with_callback(
+    Position *position,
+    int maximum_depth,
+    int time_limit_ms,
+    Move *best_move,
+    PrincipalVariation *variation,
+    int *completed_depth,
+    SearchInfoCallback callback,
+    void *user_data
 );
 
 #endif // SEARCH_H

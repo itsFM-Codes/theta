@@ -280,13 +280,15 @@ int search_position(Position *position, int depth, Move *best_move) {
     return score;
 }
 
-int search_iterative(
+int search_iterative_with_callback(
     Position *position,
     int maximum_depth,
     int time_limit_ms,
     Move *best_move,
     PrincipalVariation *variation,
-    int *completed_depth
+    int *completed_depth,
+    SearchInfoCallback callback,
+    void *user_data
 ) {
     Move move;
     PrincipalVariation current_variation;
@@ -350,8 +352,32 @@ int search_iterative(
         if (completed_depth != 0) {
             *completed_depth = depth;
         }
+
+        if (callback != 0) {
+            callback(depth, score, &current_variation, user_data);
+        }
     }
 
     destroy_search_context(&context);
     return completed_score;
+}
+
+int search_iterative(
+    Position *position,
+    int maximum_depth,
+    int time_limit_ms,
+    Move *best_move,
+    PrincipalVariation *variation,
+    int *completed_depth
+) {
+    return search_iterative_with_callback(
+        position,
+        maximum_depth,
+        time_limit_ms,
+        best_move,
+        variation,
+        completed_depth,
+        0,
+        0
+    );
 }
