@@ -4,6 +4,7 @@
 #include "src/chess/movegen.h"
 #include "src/chess/position.h"
 #include "src/engine/search.h"
+#include "src/engine/search_internal.h"
 #include "src/eval/evaluation.h"
 
 static void test_zero_depth_evaluates_position(void) {
@@ -134,6 +135,31 @@ static void test_search_restores_material(void) {
     assert(evaluate_position(&position) == 0);
 }
 
+static void test_fifty_move_draw(void) {
+    Position position;
+
+    clear_position(&position);
+    position_set_piece(&position, make_square(7, 0), PIECE_WHITE_KING);
+    position_set_piece(&position, make_square(0, 7), PIECE_BLACK_KING);
+    position_set_piece(&position, make_square(4, 3), PIECE_WHITE_QUEEN);
+    position.halfmove_clock = 100;
+
+    assert(search_position(&position, 2, 0) == 0);
+}
+
+static void test_threefold_repetition_detection(void) {
+    Position position;
+    SearchContext context;
+
+    set_starting_position(&position);
+    initialize_search_context(&context, 0);
+    assert(search_push_position(&context, &position));
+    assert(search_push_position(&context, &position));
+    assert(search_push_position(&context, &position));
+    assert(search_is_draw(&context, &position));
+    destroy_search_context(&context);
+}
+
 int main(void) {
     test_zero_depth_evaluates_position();
     test_search_captures_hanging_rook();
@@ -143,5 +169,7 @@ int main(void) {
     test_quiescence_keeps_starting_position_equal();
     test_search_returns_a_legal_move();
     test_search_restores_material();
+    test_fifty_move_draw();
+    test_threefold_repetition_detection();
     return 0;
 }

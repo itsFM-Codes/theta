@@ -1,5 +1,7 @@
 #include "evaluation.h"
+#include "king_safety.h"
 #include "mobility.h"
+#include "pawn_structure.h"
 #include "piece_square_tables.h"
 
 #define MAX_PHASE 24
@@ -68,6 +70,8 @@ int evaluate_position(const Position *position) {
     }
 
     score += mobility_score(position);
+    score += pawn_structure_score(position);
+    score += king_safety_score(position, endgame_weight);
 
     if (position->side_to_move == COLOR_BLACK) {
         score = -score;

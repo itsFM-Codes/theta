@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "src/chess/movegen.h"
+#include "src/chess/zobrist.h"
 
 static void clear_move(Move *move) {
     move->from = NO_SQUARE;
@@ -17,6 +18,7 @@ void initialize_search_context(SearchContext *context, int time_limit_ms) {
     context->start_time = clock();
     context->time_limit_ms = time_limit_ms;
     context->stopped = 0;
+    context->position_key_count = 0;
     memset(context->history, 0, sizeof(context->history));
     initialize_transposition_table(&context->table);
 
@@ -51,6 +53,51 @@ int search_has_stopped(SearchContext *context) {
     }
 
     return 0;
+}
+
+int search_push_position(SearchContext *context, const Position *position) {
+    if (context == 0 || position == 0 ||
+        context->position_key_count >= MAX_SEARCH_PLY) {
+        return 0;
+    }
+
+    context->position_keys[context->position_key_count] = position_key(position);
+    context->position_key_count++;
+    return 1;
+}
+
+void search_pop_position(SearchContext *context) {
+    if (context != 0 && context->position_key_count > 0) {
+        context->position_key_count--;
+    }
+}
+
+int search_is_draw(const SearchContext *context, const Position *position) {
+    uint64_t key;
+    int matches = 0;
+    int index;
+
+    if (position == 0) {
+        return 0;
+    }
+
+    if (position->halfmove_clock >= 100) {
+        return 1;
+    }
+
+    if (context == 0 || context->position_key_count < 3) {
+        return 0;
+    }
+
+    key = position_key(position);
+
+    for (index = 0; index < context->position_key_count - 1; ++index) {
+        if (context->position_keys[index] == key) {
+            ++matches;
+        }
+    }
+
+    return matches >= 2;
 }
 
 int position_is_in_check(const Position *position) {

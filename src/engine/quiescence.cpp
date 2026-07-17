@@ -20,6 +20,10 @@ int quiescence_search(
         return 0;
     }
 
+    if (search_is_draw(context, position)) {
+        return 0;
+    }
+
     generate_legal_moves(position, &moves);
     in_check = position_is_in_check(position);
 
@@ -62,7 +66,10 @@ int quiescence_search(
             continue;
         }
 
+        search_push_position(context, position);
+
         score = -quiescence_search(position, -beta, -alpha, ply + 1, context);
+        search_pop_position(context);
         undo_move(position, move, &undo);
 
         if (search_has_stopped(context)) {

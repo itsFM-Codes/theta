@@ -33,6 +33,10 @@ static int negamax(
         return 0;
     }
 
+    if (search_is_draw(context, position)) {
+        return 0;
+    }
+
     if (depth <= 0) {
         return quiescence_search(position, alpha, beta, ply, context);
     }
@@ -79,6 +83,8 @@ static int negamax(
             continue;
         }
 
+        search_push_position(context, position);
+
         score = -negamax(
             position,
             depth - 1,
@@ -88,6 +94,7 @@ static int negamax(
             &child_variation,
             context
         );
+        search_pop_position(context);
         undo_move(position, move, &undo);
 
         if (search_has_stopped(context)) {
@@ -162,6 +169,10 @@ static int search_position_with_variation(
         return 0;
     }
 
+    if (search_is_draw(context, position)) {
+        return 0;
+    }
+
     if (depth <= 0) {
         return evaluate_position(position);
     }
@@ -208,6 +219,8 @@ static int search_position_with_variation(
             continue;
         }
 
+        search_push_position(context, position);
+
         score = -negamax(
             position,
             depth - 1,
@@ -217,6 +230,7 @@ static int search_position_with_variation(
             &child_variation,
             context
         );
+        search_pop_position(context);
         undo_move(position, move, &undo);
 
         if (search_has_stopped(context)) {
@@ -247,6 +261,7 @@ int search_position(Position *position, int depth, Move *best_move) {
     int score;
 
     initialize_search_context(&context, 0);
+    search_push_position(&context, position);
     score = search_position_with_variation(position, depth, &variation, &context);
 
     if (best_move != 0) {
@@ -302,6 +317,7 @@ int search_iterative(
     }
 
     initialize_search_context(&context, time_limit_ms);
+    search_push_position(&context, position);
 
     completed_score = evaluate_position(position);
 
