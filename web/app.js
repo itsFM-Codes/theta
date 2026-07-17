@@ -685,6 +685,13 @@ function updateEvaluation(evaluation) {
   bar.classList.toggle('flipped', isFlipped);
 }
 
+function bestMoveNotation(move) {
+  const source = squareCoordinates(move.from);
+  const piece = board[source.row][source.column];
+
+  return moveNotation(move, piece);
+}
+
 function refreshAnalysis() {
   const evaluationLabel = formatEvaluation(materialEvaluation / 100);
 
@@ -698,7 +705,7 @@ function refreshAnalysis() {
   linesElement.innerHTML = [
     '<li>',
     `<span class="line-eval">${evaluationLabel}</span>`,
-    `<span class="line-moves">${bestMove.from}${bestMove.to}${bestMove.promotion || ''}</span>`,
+    `<span class="line-moves">${bestMoveNotation(bestMove)}</span>`,
     '</li>'
   ].join('');
 }

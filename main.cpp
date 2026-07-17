@@ -120,13 +120,19 @@ static int print_search_result(const char *fen, int depth) {
 
         if (promotion != '\0') {
             printf(
-                "{\"from\":\"%s\",\"to\":\"%s\",\"promotion\":\"%c\"}",
+                "{\"from\":\"%s\",\"to\":\"%s\",\"flags\":%d,\"promotion\":\"%c\"}",
                 from,
                 to,
+                best_move.flags,
                 promotion
             );
         } else {
-            printf("{\"from\":\"%s\",\"to\":\"%s\",\"promotion\":null}", from, to);
+            printf(
+                "{\"from\":\"%s\",\"to\":\"%s\",\"flags\":%d,\"promotion\":null}",
+                from,
+                to,
+                best_move.flags
+            );
         }
     } else {
         printf("null");
