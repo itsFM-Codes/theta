@@ -108,6 +108,9 @@ echo [BUILD] search_test
     src\chess\move.cpp ^
     src\chess\movegen.cpp ^
     src\engine\search.cpp ^
+    src\engine\search_context.cpp ^
+    src\engine\move_ordering.cpp ^
+    src\engine\quiescence.cpp ^
     src\eval\evaluation.cpp ^
     -o build\search_test.exe
 if errorlevel 1 exit /b 1
