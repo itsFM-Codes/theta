@@ -142,7 +142,8 @@ static int parse_depth(const char *text, int *depth) {
 
     value = strtol(text, &end, 10);
 
-    if (*text == '\0' || *end != '\0' || value < 1 || value > 8) {
+    if (*text == '\0' || *end != '\0' || value < 1 ||
+        value > g_config.max_depth) {
         return 0;
     }
 

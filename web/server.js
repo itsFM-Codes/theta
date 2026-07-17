@@ -8,6 +8,7 @@ const PORT = 8042;
 const WEB_DIRECTORY = __dirname;
 const PROJECT_DIRECTORY = path.resolve(WEB_DIRECTORY, '..');
 const ENGINE_PATH = path.join(PROJECT_DIRECTORY, 'build', 'theta.exe');
+const CONFIG_PATH = path.join(PROJECT_DIRECTORY, 'config', 'config.conf');
 const MAX_REQUEST_SIZE = 32_768;
 
 const CONTENT_TYPES = {
@@ -26,6 +27,25 @@ function sendJson(response, status, value) {
     'Content-Length': Buffer.byteLength(body)
   });
   response.end(body);
+}
+
+function configuredMaxDepth() {
+  let content;
+  let match;
+  let depth;
+
+  try {
+    content = fs.readFileSync(CONFIG_PATH, 'utf8');
+  } catch (error) {
+    return 6;
+  }
+
+  match = content.match(/^\s*max_depth\s*=\s*(\d+)\s*$/m);
+  depth = match ? Number(match[1]) : 6;
+
+  return Number.isInteger(depth) && depth >= 1 && depth <= 128
+    ? depth
+    : 6;
 }
 
 function readRequestBody(request, callback) {
@@ -53,7 +73,8 @@ function handleEngineRequest(request, response, command) {
       fen = value.fen;
 
       if (command === 'search') {
-        if (!Number.isInteger(value.depth) || value.depth < 1 || value.depth > 8) {
+        if (!Number.isInteger(value.depth) || value.depth < 1 ||
+            value.depth > configuredMaxDepth()) {
           sendJson(response, 400, { error: 'Invalid depth' });
           return;
         }
@@ -145,7 +166,7 @@ function handleSearchStream(request, response) {
         value.fen.length > 256 ||
         /[\r\n]/.test(value.fen) ||
         !Number.isInteger(value.depth) ||
-        value.depth < 1 || value.depth > 8 ||
+        value.depth < 1 || value.depth > configuredMaxDepth() ||
         !Number.isInteger(value.timeMs) ||
         value.timeMs < 0 || value.timeMs > 60000) {
       sendJson(response, 400, { error: 'Invalid search request' });
@@ -260,6 +281,11 @@ function handleStaticRequest(request, response) {
 }
 
 const server = http.createServer((request, response) => {
+  if (request.method === 'GET' && request.url === '/api/config') {
+    sendJson(response, 200, { maxDepth: configuredMaxDepth() });
+    return;
+  }
+
   if (request.method === 'POST' && request.url === '/api/moves') {
     handleEngineRequest(request, response, 'moves');
     return;

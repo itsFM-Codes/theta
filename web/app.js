@@ -16,8 +16,8 @@ const MOVE_FLAG_EN_PASSANT = 1 << 2;
 const MOVE_FLAG_CASTLE_KINGSIDE = 1 << 3;
 const MOVE_FLAG_CASTLE_QUEENSIDE = 1 << 4;
 const MOVE_FLAG_PROMOTION = 1 << 5;
-let searchDepth = 8;
-let searchTimeMs = 1000;
+let searchDepth = 10;
+let searchTimeMs = 20000;
 
 const boardElement = document.querySelector('#board');
 const linesElement = document.querySelector('#lines');
@@ -792,6 +792,22 @@ function updateSearchSettings() {
   refreshSearchSettings();
 }
 
+async function loadSearchSettings() {
+  try {
+    const response = await fetch('/api/config');
+    const result = await response.json();
+    const maximumDepth = Number(result.maxDepth);
+
+    if (Number.isInteger(maximumDepth) && maximumDepth >= 1) {
+      searchDepthInput.max = maximumDepth;
+      searchDepth = Math.min(searchDepth, maximumDepth);
+      refreshSearchSettings();
+    }
+  } catch (error) {
+    console.error(error);
+  }
+}
+
 function applyVariationMove(lineBoard, move, side) {
   const source = squareCoordinates(move.from);
   const target = squareCoordinates(move.to);
@@ -1010,4 +1026,4 @@ refreshSearchSettings();
 renderBoard();
 syncWorkspaceHeight();
 refreshAnalysis();
-requestSearch();
+loadSearchSettings().then(requestSearch);
