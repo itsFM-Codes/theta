@@ -5,6 +5,7 @@
 #include "src/chess/fen.h"
 #include "src/chess/movegen.h"
 #include "src/config/config.h"
+#include "src/engine/search.h"
 #include "src/eval/evaluation.h"
 
 #define CONFIG_FILE "config/config.conf"
@@ -81,13 +82,82 @@ static int print_legal_moves(const char *fen) {
     return 1;
 }
 
+static int print_search_result(const char *fen, int depth) {
+    Position position;
+    Move best_move;
+    int evaluation;
+
+    if (!position_from_fen(&position, fen)) {
+        fprintf(stderr, "Error: Invalid FEN\n");
+        return 0;
+    }
+
+    evaluation = search_position(&position, depth, &best_move);
+
+    if (position.side_to_move == COLOR_BLACK) {
+        evaluation = -evaluation;
+    }
+
+    printf("{\"evaluation\":%d,\"depth\":%d,\"move\":", evaluation, depth);
+
+    if (is_valid_square(best_move.from) && is_valid_square(best_move.to)) {
+        char from[3];
+        char to[3];
+        char promotion = promotion_character(best_move.promotion);
+
+        square_name(best_move.from, from);
+        square_name(best_move.to, to);
+
+        if (promotion != '\0') {
+            printf(
+                "{\"from\":\"%s\",\"to\":\"%s\",\"promotion\":\"%c\"}",
+                from,
+                to,
+                promotion
+            );
+        } else {
+            printf("{\"from\":\"%s\",\"to\":\"%s\",\"promotion\":null}", from, to);
+        }
+    } else {
+        printf("null");
+    }
+
+    printf("}\n");
+    return 1;
+}
+
+static int parse_depth(const char *text, int *depth) {
+    char *end;
+    long value;
+
+    if (text == 0 || depth == 0) {
+        return 0;
+    }
+
+    value = strtol(text, &end, 10);
+
+    if (*text == '\0' || *end != '\0' || value < 1 || value > 8) {
+        return 0;
+    }
+
+    *depth = (int)value;
+    return 1;
+}
+
 int main(int argc, char **argv) {
+    int depth;
+
     if (!load_config(CONFIG_FILE)) {
         return EXIT_FAILURE;
     }
 
     if (argc == 3 && strcmp(argv[1], "moves") == 0) {
         return print_legal_moves(argv[2]) ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (argc == 4 && strcmp(argv[1], "search") == 0 &&
+        parse_depth(argv[2], &depth)) {
+        return print_search_result(argv[3], depth) ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
     return EXIT_SUCCESS;

@@ -42,13 +42,25 @@ function readRequestBody(request, callback) {
   request.on('end', () => callback(body));
 }
 
-function handleMoveRequest(request, response) {
+function handleEngineRequest(request, response, command) {
   readRequestBody(request, body => {
     let fen;
+    let arguments;
 
     try {
       const value = JSON.parse(body);
       fen = value.fen;
+
+      if (command === 'search') {
+        if (!Number.isInteger(value.depth) || value.depth < 1 || value.depth > 8) {
+          sendJson(response, 400, { error: 'Invalid depth' });
+          return;
+        }
+
+        arguments = [command, String(value.depth), fen];
+      } else {
+        arguments = [command, fen];
+      }
     } catch (error) {
       sendJson(response, 400, { error: 'Invalid request' });
       return;
@@ -66,7 +78,7 @@ function handleMoveRequest(request, response) {
 
     execFile(
       ENGINE_PATH,
-      ['moves', fen],
+      arguments,
       {
         cwd: PROJECT_DIRECTORY,
         timeout: 5000,
@@ -120,7 +132,12 @@ function handleStaticRequest(request, response) {
 
 const server = http.createServer((request, response) => {
   if (request.method === 'POST' && request.url === '/api/moves') {
-    handleMoveRequest(request, response);
+    handleEngineRequest(request, response, 'moves');
+    return;
+  }
+
+  if (request.method === 'POST' && request.url === '/api/search') {
+    handleEngineRequest(request, response, 'search');
     return;
   }
 

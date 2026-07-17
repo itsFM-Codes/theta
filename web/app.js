@@ -16,12 +16,7 @@ const MOVE_FLAG_EN_PASSANT = 1 << 2;
 const MOVE_FLAG_CASTLE_KINGSIDE = 1 << 3;
 const MOVE_FLAG_CASTLE_QUEENSIDE = 1 << 4;
 const MOVE_FLAG_PROMOTION = 1 << 5;
-
-const DEMO_LINES = [
-  ['+0.18', '1. e4 e5 2. Nf3 Nc6 3. Bb5 a6'],
-  ['+0.12', '1. d4 Nf6 2. c4 e6 3. Nc3 Bb4'],
-  ['+0.08', '1. Nf3 d5 2. g3 c6 3. Bg2 Bg4']
-];
+const SEARCH_DEPTH = 5;
 
 const boardElement = document.querySelector('#board');
 const linesElement = document.querySelector('#lines');
@@ -47,6 +42,8 @@ let dragMoveApplied = false;
 let dragDropPending = false;
 let materialEvaluation = 0;
 let evaluationRequestNumber = 0;
+let analysisDepth = SEARCH_DEPTH;
+let bestMove = null;
 
 function createStartingPosition() {
   return STARTING_POSITION.map(row => [...row]);
@@ -350,7 +347,7 @@ function goToHistory(index) {
   renderBoard();
   renderMoveHistory();
   refreshAnalysis();
-  requestEvaluation();
+  requestSearch();
 }
 
 function canSelectPiece(piece) {
@@ -392,8 +389,6 @@ async function requestLegalMoves(row, column, preserveBoard = false) {
       return;
     }
 
-    updateEvaluation(result.evaluation);
-    refreshAnalysis();
     legalMoves = result.moves.filter(move => move.from === from);
     if (preserveBoard) {
       refreshSquareClasses();
@@ -416,25 +411,30 @@ async function requestLegalMoves(row, column, preserveBoard = false) {
   }
 }
 
-async function requestEvaluation() {
+async function requestSearch() {
   const requestNumber = ++evaluationRequestNumber;
 
   try {
-    const response = await fetch('/api/moves', {
+    const response = await fetch('/api/search', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ fen: currentFen() })
+      body: JSON.stringify({
+        fen: currentFen(),
+        depth: SEARCH_DEPTH
+      })
     });
 
     if (!response.ok) {
-      throw new Error(`Evaluation request failed with ${response.status}`);
+      throw new Error(`Search request failed with ${response.status}`);
     }
 
     const result = await response.json();
     if (requestNumber === evaluationRequestNumber) {
       updateEvaluation(result.evaluation);
+      analysisDepth = result.depth;
+      bestMove = result.move;
       refreshAnalysis();
     }
   } catch (error) {
@@ -618,7 +618,7 @@ function applyLegalMove(move) {
   renderBoard();
   renderMoveHistory();
   refreshAnalysis();
-  requestEvaluation();
+  requestSearch();
 }
 
 function handleEditorClick(row, column) {
@@ -630,6 +630,9 @@ function handleEditorClick(row, column) {
   resetHistory();
   renderBoard();
   updateEvaluation(0);
+  analysisDepth = 0;
+  bestMove = null;
+  refreshAnalysis();
 }
 
 async function handleSquareClick(event) {
@@ -685,19 +688,19 @@ function updateEvaluation(evaluation) {
 function refreshAnalysis() {
   const evaluationLabel = formatEvaluation(materialEvaluation / 100);
 
-  document.querySelector('#depth').textContent = 'Material';
+  document.querySelector('#depth').textContent = `Depth ${analysisDepth}`;
 
-  linesElement.innerHTML = DEMO_LINES
-    .map(([score, moves], index) => {
-      const displayedScore = index === 0 ? evaluationLabel : score;
-      return [
-        '<li>',
-        `<span class="line-eval">${displayedScore}</span>`,
-        `<span class="line-moves">${moves}</span>`,
-        '</li>'
-      ].join('');
-    })
-    .join('');
+  if (bestMove == null) {
+    linesElement.innerHTML = '';
+    return;
+  }
+
+  linesElement.innerHTML = [
+    '<li>',
+    `<span class="line-eval">${evaluationLabel}</span>`,
+    `<span class="line-moves">${bestMove.from}${bestMove.to}${bestMove.promotion || ''}</span>`,
+    '</li>'
+  ].join('');
 }
 
 function renderEditorTray() {
@@ -759,7 +762,7 @@ function resetBoard() {
   resetHistory();
   renderBoard();
   refreshAnalysis();
-  requestEvaluation();
+  requestSearch();
 }
 
 function clearBoard() {
@@ -818,4 +821,4 @@ renderEditorTray();
 resetHistory();
 renderBoard();
 refreshAnalysis();
-requestEvaluation();
+requestSearch();
