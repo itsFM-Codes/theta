@@ -9,6 +9,7 @@
 
 #define REVERSE_FUTILITY_MARGIN 120
 #define LATE_MOVE_PRUNING_START 8
+#define MAX_CHECK_EXTENSION_PLY 8
 
 static int has_non_pawn_material(const Position *position, Color color) {
     int square;
@@ -175,6 +176,10 @@ static int negamax(
             !gives_check) {
             search_depth--;
             reduced = 1;
+        }
+
+        if (gives_check && ply < MAX_CHECK_EXTENSION_PLY) {
+            search_depth++;
         }
 
         if (index == 0) {
