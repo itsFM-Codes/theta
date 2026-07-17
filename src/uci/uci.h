@@ -1,6 +1,6 @@
 #ifndef UCI_H
 #define UCI_H
 
-void uci_loop();
+int run_uci(void);
 
 #endif // UCI_H

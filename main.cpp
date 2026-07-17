@@ -7,6 +7,7 @@
 #include "src/config/config.h"
 #include "src/engine/search.h"
 #include "src/eval/evaluation.h"
+#include "src/uci/uci.h"
 
 #define CONFIG_FILE "config/config.conf"
 
@@ -173,6 +174,10 @@ int main(int argc, char **argv) {
 
     if (!load_config(CONFIG_FILE)) {
         return EXIT_FAILURE;
+    }
+
+    if (argc == 1) {
+        return run_uci() ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
     if (argc == 3 && strcmp(argv[1], "moves") == 0) {
