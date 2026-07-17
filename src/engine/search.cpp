@@ -70,6 +70,80 @@ static void order_moves(const Position *position, MoveList *moves) {
     }
 }
 
+static int position_is_in_check(const Position *position) {
+    int king_square = find_king(position, position->side_to_move);
+
+    return is_valid_square(king_square) &&
+           is_square_attacked(
+               position,
+               king_square,
+               opposite_color(position->side_to_move)
+           );
+}
+
+static int quiescence(
+    Position *position,
+    int alpha,
+    int beta,
+    int ply
+) {
+    MoveList moves;
+    int in_check;
+    int index;
+
+    generate_legal_moves(position, &moves);
+    in_check = position_is_in_check(position);
+
+    if (moves.count == 0) {
+        if (in_check) {
+            return -SEARCH_CHECKMATE + ply;
+        }
+
+        return 0;
+    }
+
+    if (!in_check) {
+        int stand_pat = evaluate_position(position);
+
+        if (stand_pat >= beta) {
+            return beta;
+        }
+
+        if (stand_pat > alpha) {
+            alpha = stand_pat;
+        }
+    }
+
+    order_moves(position, &moves);
+
+    for (index = 0; index < moves.count; ++index) {
+        Move move = moves.moves[index];
+        UndoState undo;
+        int score;
+
+        if (!in_check && (move.flags & MOVE_FLAG_CAPTURE) == 0) {
+            continue;
+        }
+
+        if (!make_move(position, move, &undo)) {
+            continue;
+        }
+
+        score = -quiescence(position, -beta, -alpha, ply + 1);
+        undo_move(position, move, &undo);
+
+        if (score >= beta) {
+            return beta;
+        }
+
+        if (score > alpha) {
+            alpha = score;
+        }
+    }
+
+    return alpha;
+}
+
 static int negamax(
     Position *position,
     int depth,
@@ -81,7 +155,7 @@ static int negamax(
     int index;
 
     if (depth <= 0) {
-        return evaluate_position(position);
+        return quiescence(position, alpha, beta, ply);
     }
 
     generate_legal_moves(position, &moves);
