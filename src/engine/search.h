@@ -8,5 +8,11 @@
 #define SEARCH_CHECKMATE 29000
 
 int search_position(Position *position, int depth, Move *best_move);
+int search_iterative(
+    Position *position,
+    int maximum_depth,
+    Move *best_move,
+    int *completed_depth
+);
 
 #endif // SEARCH_H

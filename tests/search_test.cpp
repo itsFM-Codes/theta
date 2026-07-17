@@ -48,9 +48,28 @@ static void test_search_detects_checkmate(void) {
     assert(best_move.to == NO_SQUARE);
 }
 
+static void test_iterative_search_reaches_requested_depth(void) {
+    Position position;
+    Move best_move;
+    int completed_depth;
+
+    clear_position(&position);
+    position_set_piece(&position, make_square(7, 0), PIECE_WHITE_KING);
+    position_set_piece(&position, make_square(7, 3), PIECE_WHITE_QUEEN);
+    position_set_piece(&position, make_square(0, 3), PIECE_BLACK_ROOK);
+    position_set_piece(&position, make_square(0, 7), PIECE_BLACK_KING);
+    position.side_to_move = COLOR_WHITE;
+
+    assert(search_iterative(&position, 2, &best_move, &completed_depth) > 0);
+    assert(completed_depth == 2);
+    assert(best_move.from == make_square(7, 3));
+    assert(best_move.to == make_square(0, 3));
+}
+
 int main(void) {
     test_zero_depth_evaluates_position();
     test_search_captures_hanging_rook();
     test_search_detects_checkmate();
+    test_iterative_search_reaches_requested_depth();
     return 0;
 }

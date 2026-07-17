@@ -119,3 +119,49 @@ int search_position(Position *position, int depth, Move *best_move) {
 
     return alpha;
 }
+
+int search_iterative(
+    Position *position,
+    int maximum_depth,
+    Move *best_move,
+    int *completed_depth
+) {
+    Move move;
+    int depth;
+    int score = 0;
+
+    if (best_move != 0) {
+        best_move->from = NO_SQUARE;
+        best_move->to = NO_SQUARE;
+        best_move->promotion = PIECE_NONE;
+        best_move->flags = MOVE_FLAG_NONE;
+    }
+
+    if (completed_depth != 0) {
+        *completed_depth = 0;
+    }
+
+    if (position == 0) {
+        return 0;
+    }
+
+    if (maximum_depth <= 0) {
+        return evaluate_position(position);
+    }
+
+    for (depth = 1; depth <= maximum_depth; ++depth) {
+        score = search_position(position, depth, &move);
+
+        if (best_move != 0 &&
+            is_valid_square(move.from) &&
+            is_valid_square(move.to)) {
+            *best_move = move;
+        }
+
+        if (completed_depth != 0) {
+            *completed_depth = depth;
+        }
+    }
+
+    return score;
+}

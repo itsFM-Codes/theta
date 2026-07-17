@@ -85,6 +85,7 @@ static int print_legal_moves(const char *fen) {
 static int print_search_result(const char *fen, int depth) {
     Position position;
     Move best_move;
+    int completed_depth;
     int evaluation;
 
     if (!position_from_fen(&position, fen)) {
@@ -92,13 +93,22 @@ static int print_search_result(const char *fen, int depth) {
         return 0;
     }
 
-    evaluation = search_position(&position, depth, &best_move);
+    evaluation = search_iterative(
+        &position,
+        depth,
+        &best_move,
+        &completed_depth
+    );
 
     if (position.side_to_move == COLOR_BLACK) {
         evaluation = -evaluation;
     }
 
-    printf("{\"evaluation\":%d,\"depth\":%d,\"move\":", evaluation, depth);
+    printf(
+        "{\"evaluation\":%d,\"depth\":%d,\"move\":",
+        evaluation,
+        completed_depth
+    );
 
     if (is_valid_square(best_move.from) && is_valid_square(best_move.to)) {
         char from[3];

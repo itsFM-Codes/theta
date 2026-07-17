@@ -16,7 +16,7 @@ const MOVE_FLAG_EN_PASSANT = 1 << 2;
 const MOVE_FLAG_CASTLE_KINGSIDE = 1 << 3;
 const MOVE_FLAG_CASTLE_QUEENSIDE = 1 << 4;
 const MOVE_FLAG_PROMOTION = 1 << 5;
-const SEARCH_DEPTH = 5;
+const SEARCH_DEPTH = 10;
 
 const boardElement = document.querySelector('#board');
 const linesElement = document.querySelector('#lines');
