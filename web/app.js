@@ -72,8 +72,9 @@ function createStartingPosition() {
 
 function syncWorkspaceHeight() {
   const boardSize = boardElement.getBoundingClientRect().width;
+  const useStackedLayout = window.innerWidth <= 900 || boardSize === 0;
 
-  if (window.innerWidth <= 780 || boardSize === 0) {
+  if (useStackedLayout) {
     evaluationElement.style.height = '';
     sidePanelElement.style.height = '';
     return;
@@ -1107,6 +1108,7 @@ document.addEventListener('keydown', event => {
   }
 });
 
+window.addEventListener('resize', syncWorkspaceHeight);
 new ResizeObserver(syncWorkspaceHeight).observe(boardElement);
 renderEditorTray();
 resetHistory();
