@@ -8,9 +8,8 @@ and NPS are recorded by the command but vary by machine and system load.
 
 | Position | Depth | Score | Best move | Nodes |
 | --- | ---: | ---: | --- | ---: |
-| 1 | 5 | 13 | b1c3 | 5,886 |
-| 2 | 5 | -384 | d5d6 | 13,048 |
-| 3 | 5 | 5 | b5b6 | 997 |
-| 4 | 5 | 0 | e2e3 | 10,814 |
-| **Total** | | | | **30,745** |
-
+| 1 | 5 | 45 | g1f3 | 4,702 |
+| 2 | 5 | -384 | d5d6 | 12,897 |
+| 3 | 5 | 5 | b5b6 | 1,020 |
+| 4 | 5 | 0 | e2d2 | 15,477 |
+| **Total** | | | | **34,096** |
