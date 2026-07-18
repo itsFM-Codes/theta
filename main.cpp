@@ -222,6 +222,8 @@ static int run_tactical_suite(void) {
 static int print_legal_moves(const char *fen) {
     Position position;
     MoveList moves;
+    int king_square;
+    int in_check;
     int evaluation;
     int index;
 
@@ -237,6 +239,14 @@ static int print_legal_moves(const char *fen) {
         evaluation = -evaluation;
     }
 
+    king_square = find_king(&position, position.side_to_move);
+    in_check = is_valid_square(king_square) &&
+        is_square_attacked(
+            &position,
+            king_square,
+            opposite_color(position.side_to_move)
+        );
+
     printf("{\"moves\":[");
 
     for (index = 0; index < moves.count; ++index) {
@@ -249,7 +259,12 @@ static int print_legal_moves(const char *fen) {
         print_move_json(move);
     }
 
-    printf("],\"count\":%d,\"evaluation\":%d}\n", moves.count, evaluation);
+    printf(
+        "],\"count\":%d,\"evaluation\":%d,\"inCheck\":%s}\n",
+        moves.count,
+        evaluation,
+        in_check ? "true" : "false"
+    );
     return 1;
 }
 

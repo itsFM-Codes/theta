@@ -16,8 +16,9 @@ const MOVE_FLAG_EN_PASSANT = 1 << 2;
 const MOVE_FLAG_CASTLE_KINGSIDE = 1 << 3;
 const MOVE_FLAG_CASTLE_QUEENSIDE = 1 << 4;
 const MOVE_FLAG_PROMOTION = 1 << 5;
-let searchDepth = 10;
-let searchTimeMs = 20000;
+let searchDepth = 8;
+let searchTimeMs = 1000;
+let searchInfinite = false;
 
 const boardElement = document.querySelector('#board');
 const linesElement = document.querySelector('#lines');
@@ -28,15 +29,23 @@ const settingsButton = document.querySelector('#engine-settings');
 const settingsElement = document.querySelector('#search-settings');
 const searchTimeInput = document.querySelector('#search-time');
 const searchDepthInput = document.querySelector('#search-depth');
+const searchInfiniteInput = document.querySelector('#search-infinite');
 const searchStatusElement = document.querySelector('#search-status');
 const depthElement = document.querySelector('#depth');
 const searchStatsElement = document.querySelector('#search-stats');
+const playControlsElement = document.querySelector('#play-controls');
+const playColorButtons = document.querySelectorAll('.play-color');
 
 let board = createStartingPosition();
 let currentMode = 'play';
+let playerColor = 'white';
 let selectedSquare = null;
 let selectedEditorPiece = 'P';
 let legalMoves = [];
+let positionLegalMoves = [];
+let lastMove = null;
+let currentPositionInCheck = false;
+let gameResult = null;
 let isFlipped = false;
 let sideToMove = 'white';
 let castlingRights = 'KQkq';
@@ -53,11 +62,13 @@ let dragDropPending = false;
 let materialEvaluation = 0;
 let evaluationText = '+0.00';
 let evaluationRequestNumber = 0;
+let gameStateRequestNumber = 0;
 let searchAbortController = null;
 let analysisDepth = searchDepth;
 let principalVariation = [];
 let searchStatus = 'Idle';
 let searchError = '';
+let engineMovePending = false;
 let searchStats = {
   selectiveDepth: 0,
   nodes: 0,
@@ -156,6 +167,18 @@ function getSquareClass(row, column) {
   const color = (row + column) % 2 === 0 ? 'light' : 'dark';
   const classes = ['square', color];
   const move = moveToSquare(row, column);
+  const square = squareName(row, column);
+  const piece = board[row][column];
+
+  if (lastMove && (lastMove.from === square || lastMove.to === square)) {
+    classes.push('last-move');
+  }
+
+  if (currentPositionInCheck &&
+      piece.toLowerCase() === 'k' &&
+      (sideToMove === 'white' ? piece === 'K' : piece === 'k')) {
+    classes.push('in-check');
+  }
 
   if (isSelected(row, column)) {
     classes.push('selected');
@@ -290,7 +313,7 @@ function restorePosition(position) {
   fullmoveNumber = position.fullmoveNumber;
 }
 
-function moveNotation(move, piece) {
+function moveNotation(move, piece, moves = []) {
   if (move.flags & MOVE_FLAG_CASTLE_KINGSIDE) {
     return 'O-O';
   }
@@ -309,6 +332,29 @@ function moveNotation(move, piece) {
     }
   } else {
     notation += piece.toUpperCase();
+
+    const alternatives = moves.filter(candidate => {
+      if (candidate.from === move.from || candidate.to !== move.to) {
+        return false;
+      }
+
+      const coordinates = squareCoordinates(candidate.from);
+      return board[coordinates.row][coordinates.column] === piece;
+    });
+
+    if (alternatives.length > 0) {
+      const hasSameFile = alternatives.some(candidate =>
+        candidate.from[0] === move.from[0]
+      );
+      const hasSameRank = alternatives.some(candidate =>
+        candidate.from[1] === move.from[1]
+      );
+
+      notation += hasSameFile
+        ? (hasSameRank ? move.from : move.from[1])
+        : move.from[0];
+    }
+
     if (isCapture) {
       notation += 'x';
     }
@@ -366,6 +412,9 @@ function resetHistory() {
   moveHistory = [];
   positionHistory = [capturePosition()];
   historyIndex = 0;
+  lastMove = null;
+  currentPositionInCheck = false;
+  gameResult = null;
   renderMoveHistory();
 }
 
@@ -374,15 +423,26 @@ function goToHistory(index) {
     return;
   }
 
+  evaluationRequestNumber++;
+  if (searchAbortController) {
+    searchAbortController.abort();
+  }
+
   historyIndex = index;
   restorePosition(positionHistory[index]);
+  lastMove = index === 0 ? null : moveHistory[index - 1];
   selectedSquare = null;
   legalMoves = [];
   moveRequestNumber++;
   renderBoard();
   renderMoveHistory();
   refreshAnalysis();
-  requestSearch();
+
+  refreshGameState();
+
+  if (currentMode === 'analysis') {
+    requestSearch();
+  }
 }
 
 function canSelectPiece(piece) {
@@ -391,7 +451,29 @@ function canSelectPiece(piece) {
   }
 
   const isWhitePiece = piece === piece.toUpperCase();
-  return sideToMove === 'white' ? isWhitePiece : !isWhitePiece;
+  const matchesTurn = sideToMove === 'white' ? isWhitePiece : !isWhitePiece;
+
+  if (currentMode === 'play' && sideToMove !== playerColor) {
+    return false;
+  }
+
+  return matchesTurn;
+}
+
+async function fetchPositionMoves(fen = currentFen()) {
+  const response = await fetch('/api/moves', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ fen })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Move request failed with ${response.status}`);
+  }
+
+  return response.json();
 }
 
 async function requestLegalMoves(row, column, preserveBoard = false) {
@@ -407,23 +489,13 @@ async function requestLegalMoves(row, column, preserveBoard = false) {
   }
 
   try {
-    const response = await fetch('/api/moves', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ fen: currentFen() })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Move request failed with ${response.status}`);
-    }
-
-    const result = await response.json();
+    const result = await fetchPositionMoves();
     if (requestNumber !== moveRequestNumber) {
       return;
     }
 
+    positionLegalMoves = result.moves;
+    currentPositionInCheck = Boolean(result.inCheck);
     legalMoves = result.moves.filter(move => move.from === from);
     if (preserveBoard) {
       refreshSquareClasses();
@@ -446,7 +518,15 @@ async function requestLegalMoves(row, column, preserveBoard = false) {
   }
 }
 
-async function requestSearch() {
+function legalMoveFromUci(moves, text) {
+  return moves.find(move => {
+    const promotion = move.promotion || '';
+
+    return `${move.from}${move.to}${promotion}` === text;
+  });
+}
+
+async function requestSearch({ infinite = searchInfinite } = {}) {
   const requestNumber = ++evaluationRequestNumber;
   let buffer = '';
 
@@ -469,7 +549,8 @@ async function requestSearch() {
       body: JSON.stringify({
         fen: currentFen(),
         depth: searchDepth,
-        timeMs: searchTimeMs
+        timeMs: searchTimeMs,
+        infinite
       })
     });
 
@@ -510,6 +591,10 @@ async function requestSearch() {
           throw new Error(update.error);
         }
 
+        if (update.bestMove) {
+          continue;
+        }
+
         if (requestNumber === evaluationRequestNumber) {
           searchStatus = 'Searching';
           searchStats = {
@@ -519,9 +604,12 @@ async function requestSearch() {
             timeMs: update.timeMs || 0,
             hashfull: update.hashfull || 0
           };
-          updateEvaluation(update.evaluation, formatSearchScore(update));
+          updateEvaluation(
+            scoreFromWhitePerspective(update),
+            formatSearchScore(update)
+          );
           analysisDepth = update.depth;
-          principalVariation = update.pv.map(uciMoveToMove);
+          principalVariation = update.pv;
           refreshAnalysis();
         }
       }
@@ -548,12 +636,166 @@ async function requestSearch() {
   }
 }
 
-function uciMoveToMove(text) {
+async function requestEngineMove() {
+  if (currentMode !== 'play' ||
+      sideToMove === playerColor ||
+      gameResult ||
+      engineMovePending) {
+    return;
+  }
+
+  const requestNumber = ++evaluationRequestNumber;
+  let buffer = '';
+  let bestMoveText = null;
+
+  if (searchAbortController) {
+    searchAbortController.abort();
+  }
+
+  searchAbortController = new AbortController();
+  engineMovePending = true;
+  searchStatus = 'Thinking';
+  searchError = '';
+  refreshAnalysis();
+  renderBoard();
+
+  try {
+    const response = await fetch('/api/search-stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      signal: searchAbortController.signal,
+      body: JSON.stringify({
+        fen: currentFen(),
+        depth: searchDepth,
+        timeMs: searchTimeMs,
+        infinite: false
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Search request failed with ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    for (;;) {
+      const result = await reader.read();
+
+      if (result.done) {
+        break;
+      }
+
+      buffer += decoder.decode(result.value, { stream: true });
+
+      for (;;) {
+        const lineEnd = buffer.indexOf('\n');
+        let line;
+        let update;
+
+        if (lineEnd === -1) {
+          break;
+        }
+
+        line = buffer.slice(0, lineEnd);
+        buffer = buffer.slice(lineEnd + 1);
+
+        if (!line) {
+          continue;
+        }
+
+        update = JSON.parse(line);
+        if (update.error) {
+          throw new Error(update.error);
+        }
+
+        if (requestNumber !== evaluationRequestNumber) {
+          continue;
+        }
+
+        if (update.bestMove) {
+          bestMoveText = update.bestMove;
+          continue;
+        }
+
+        if (Array.isArray(update.pv) && update.pv.length > 0) {
+          bestMoveText = update.pv[0];
+        }
+
+        searchStatus = 'Thinking';
+        searchStats = {
+          selectiveDepth: update.selectiveDepth || update.depth,
+          nodes: update.nodes || 0,
+          nps: update.nps || 0,
+          timeMs: update.timeMs || 0,
+          hashfull: update.hashfull || 0
+        };
+        updateEvaluation(
+          scoreFromWhitePerspective(update),
+          formatSearchScore(update)
+        );
+        analysisDepth = update.depth;
+        principalVariation = update.pv;
+        refreshAnalysis();
+      }
+    }
+
+    if (requestNumber !== evaluationRequestNumber ||
+        currentMode !== 'play' ||
+        !bestMoveText ||
+        bestMoveText === '0000') {
+      if (requestNumber === evaluationRequestNumber) {
+        searchStatus = 'Ready';
+        refreshAnalysis();
+      }
+      return;
+    }
+
+    const position = await fetchPositionMoves();
+    const move = legalMoveFromUci(position.moves, bestMoveText);
+
+    if (!move) {
+      throw new Error(`Engine returned illegal move ${bestMoveText}`);
+    }
+
+    applyLegalMove(move, {
+      availableMoves: position.moves
+    });
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      if (requestNumber === evaluationRequestNumber) {
+        searchStatus = 'Cancelled';
+        refreshAnalysis();
+      }
+    } else {
+      if (requestNumber === evaluationRequestNumber) {
+        searchStatus = 'Error';
+        searchError = error.message;
+        refreshAnalysis();
+      }
+      console.error(error);
+    }
+  } finally {
+    if (requestNumber === evaluationRequestNumber) {
+      engineMovePending = false;
+      renderBoard();
+    }
+  }
+}
+
+function uciMoveToMove(
+  text,
+  positionBoard = board,
+  positionEnPassant = enPassantSquare
+) {
   const from = text.slice(0, 2);
   const to = text.slice(2, 4);
   const source = squareCoordinates(from);
   const target = squareCoordinates(to);
-  const piece = board[source.row]?.[source.column] || '.';
+  const piece = positionBoard[source.row]?.[source.column] || '.';
+  const targetPiece = positionBoard[target.row]?.[target.column] || '.';
   let flags = 0;
 
   if (piece.toLowerCase() === 'k' &&
@@ -565,6 +807,22 @@ function uciMoveToMove(text) {
 
   if (text.length === 5) {
     flags |= MOVE_FLAG_PROMOTION;
+  }
+
+  if (targetPiece !== '.') {
+    flags |= MOVE_FLAG_CAPTURE;
+  }
+
+  if (piece.toLowerCase() === 'p') {
+    if (Math.abs(source.row - target.row) === 2) {
+      flags |= MOVE_FLAG_DOUBLE_PAWN;
+    }
+
+    if (source.column !== target.column &&
+        targetPiece === '.' &&
+        to === positionEnPassant) {
+      flags |= MOVE_FLAG_CAPTURE | MOVE_FLAG_EN_PASSANT;
+    }
   }
 
   return {
@@ -581,7 +839,7 @@ function handlePieceDragStart(event) {
   const column = Number(square.dataset.column);
   const piece = board[row][column];
 
-  if (currentMode === 'editor' || !canSelectPiece(piece)) {
+  if (currentMode === 'editor' || engineMovePending || !canSelectPiece(piece)) {
     event.preventDefault();
     return;
   }
@@ -685,12 +943,15 @@ function applyCastlingRook(move, row) {
   }
 }
 
-function applyLegalMove(move) {
+function applyLegalMove(
+  move,
+  { availableMoves = positionLegalMoves } = {}
+) {
   const source = squareCoordinates(move.from);
   const target = squareCoordinates(move.to);
   const piece = board[source.row][source.column];
   const capturedPiece = board[target.row][target.column];
-  const notation = moveNotation(move, piece);
+  const notation = moveNotation(move, piece, availableMoves);
 
   if (historyIndex < moveHistory.length) {
     moveHistory = moveHistory.slice(0, historyIndex);
@@ -744,14 +1005,83 @@ function applyLegalMove(move) {
   legalMoves = [];
   moveRequestNumber++;
 
-  moveHistory.push({ notation });
+  lastMove = { from: move.from, to: move.to };
+  moveHistory.push({ notation, from: move.from, to: move.to });
   positionHistory.push(capturePosition());
   historyIndex = moveHistory.length;
 
   renderBoard();
   renderMoveHistory();
   refreshAnalysis();
-  requestSearch();
+
+  refreshGameState({ startEngine: currentMode === 'play' });
+
+  if (currentMode === 'analysis') {
+    requestSearch();
+  }
+}
+
+function updateLastMoveSuffix(suffix) {
+  if (historyIndex === 0 || !moveHistory[historyIndex - 1]) {
+    return;
+  }
+
+  const move = moveHistory[historyIndex - 1];
+  move.notation = move.notation.replace(/[+#]$/, '') + suffix;
+}
+
+async function refreshGameState({ startEngine = false } = {}) {
+  const requestNumber = ++gameStateRequestNumber;
+  const fen = currentFen();
+
+  currentPositionInCheck = false;
+  gameResult = null;
+  renderBoard();
+
+  try {
+    const result = await fetchPositionMoves(fen);
+
+    if (requestNumber !== gameStateRequestNumber || fen !== currentFen()) {
+      return;
+    }
+
+    positionLegalMoves = result.moves;
+    currentPositionInCheck = Boolean(result.inCheck);
+
+    if (result.moves.length === 0) {
+      if (currentPositionInCheck) {
+        const winner = sideToMove === 'white' ? 'Black' : 'White';
+        gameResult = `${winner} wins by checkmate`;
+        updateLastMoveSuffix('#');
+      } else {
+        gameResult = 'Draw by stalemate';
+      }
+    } else if (currentPositionInCheck) {
+      updateLastMoveSuffix('+');
+    } else {
+      updateLastMoveSuffix('');
+    }
+
+    if (currentMode === 'play') {
+      searchStatus = gameResult ||
+        (sideToMove === playerColor ? 'Your turn' : 'Theta to move');
+    }
+
+    renderBoard();
+    renderMoveHistory();
+    refreshAnalysis();
+
+    if (startEngine &&
+        currentMode === 'play' &&
+        !gameResult &&
+        sideToMove !== playerColor) {
+      requestEngineMove();
+    }
+  } catch (error) {
+    if (requestNumber === gameStateRequestNumber) {
+      console.error(error);
+    }
+  }
 }
 
 function handleEditorClick(row, column) {
@@ -774,6 +1104,10 @@ async function handleSquareClick(event) {
 
   if (currentMode === 'editor') {
     handleEditorClick(row, column);
+    return;
+  }
+
+  if (engineMovePending) {
     return;
   }
 
@@ -806,12 +1140,17 @@ function formatEvaluation(value) {
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)}`;
 }
 
+function scoreFromWhitePerspective(update) {
+  return sideToMove === 'white' ? update.evaluation : -update.evaluation;
+}
+
 function formatSearchScore(update) {
   if (update.scoreType === 'mate' && Number.isFinite(update.mate)) {
-    return `#${update.mate}`;
+    const mate = sideToMove === 'white' ? update.mate : -update.mate;
+    return `#${mate}`;
   }
 
-  return formatEvaluation(update.evaluation / 100);
+  return formatEvaluation(scoreFromWhitePerspective(update) / 100);
 }
 
 function formatCompactNumber(value) {
@@ -861,14 +1200,19 @@ function updateEvaluation(
 function refreshSearchSettings() {
   searchTimeInput.value = searchTimeMs;
   searchDepthInput.value = searchDepth;
+  searchInfiniteInput.checked = searchInfinite;
+  searchTimeInput.disabled = searchInfinite && currentMode !== 'play';
+  searchDepthInput.disabled = searchInfinite && currentMode !== 'play';
   document.querySelector('#search-time-value').textContent =
-    `${(searchTimeMs / 1000).toFixed(1)}s`;
-  document.querySelector('#search-depth-value').textContent = searchDepth;
+    searchTimeInput.disabled ? 'Infinite' : `${(searchTimeMs / 1000).toFixed(1)}s`;
+  document.querySelector('#search-depth-value').textContent =
+    searchDepthInput.disabled ? 'Infinite' : searchDepth;
 }
 
 function updateSearchSettings() {
   searchTimeMs = Number(searchTimeInput.value);
   searchDepth = Number(searchDepthInput.value);
+  searchInfinite = searchInfiniteInput.checked;
   refreshSearchSettings();
 }
 
@@ -920,16 +1264,128 @@ function applyVariationMove(lineBoard, move, side) {
   }
 }
 
+function isInsideBoard(row, column) {
+  return row >= 0 && row < 8 && column >= 0 && column < 8;
+}
+
+function isSquareAttacked(lineBoard, row, column, attackingSide) {
+  const pawn = attackingSide === 'white' ? 'P' : 'p';
+  const knight = attackingSide === 'white' ? 'N' : 'n';
+  const bishop = attackingSide === 'white' ? 'B' : 'b';
+  const rook = attackingSide === 'white' ? 'R' : 'r';
+  const queen = attackingSide === 'white' ? 'Q' : 'q';
+  const king = attackingSide === 'white' ? 'K' : 'k';
+  const pawnRow = row + (attackingSide === 'white' ? 1 : -1);
+  const knightOffsets = [
+    [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+    [1, -2], [1, 2], [2, -1], [2, 1]
+  ];
+  const diagonalDirections = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+  const straightDirections = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+  for (const pawnColumn of [column - 1, column + 1]) {
+    if (isInsideBoard(pawnRow, pawnColumn) &&
+        lineBoard[pawnRow][pawnColumn] === pawn) {
+      return true;
+    }
+  }
+
+  for (const [rowOffset, columnOffset] of knightOffsets) {
+    const sourceRow = row + rowOffset;
+    const sourceColumn = column + columnOffset;
+
+    if (isInsideBoard(sourceRow, sourceColumn) &&
+        lineBoard[sourceRow][sourceColumn] === knight) {
+      return true;
+    }
+  }
+
+  for (const [rowOffset, columnOffset] of diagonalDirections) {
+    let sourceRow = row + rowOffset;
+    let sourceColumn = column + columnOffset;
+
+    while (isInsideBoard(sourceRow, sourceColumn)) {
+      const piece = lineBoard[sourceRow][sourceColumn];
+
+      if (piece !== '.') {
+        if (piece === bishop || piece === queen) {
+          return true;
+        }
+        break;
+      }
+
+      sourceRow += rowOffset;
+      sourceColumn += columnOffset;
+    }
+  }
+
+  for (const [rowOffset, columnOffset] of straightDirections) {
+    let sourceRow = row + rowOffset;
+    let sourceColumn = column + columnOffset;
+
+    while (isInsideBoard(sourceRow, sourceColumn)) {
+      const piece = lineBoard[sourceRow][sourceColumn];
+
+      if (piece !== '.') {
+        if (piece === rook || piece === queen) {
+          return true;
+        }
+        break;
+      }
+
+      sourceRow += rowOffset;
+      sourceColumn += columnOffset;
+    }
+  }
+
+  for (const [rowOffset, columnOffset] of [
+    [-1, -1], [-1, 0], [-1, 1],
+    [0, -1], [0, 1],
+    [1, -1], [1, 0], [1, 1]
+  ]) {
+    const sourceRow = row + rowOffset;
+    const sourceColumn = column + columnOffset;
+
+    if (isInsideBoard(sourceRow, sourceColumn) &&
+        lineBoard[sourceRow][sourceColumn] === king) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isSideInCheck(lineBoard, side) {
+  const king = side === 'white' ? 'K' : 'k';
+
+  for (let row = 0; row < 8; row++) {
+    for (let column = 0; column < 8; column++) {
+      if (lineBoard[row][column] === king) {
+        return isSquareAttacked(
+          lineBoard,
+          row,
+          column,
+          side === 'white' ? 'black' : 'white'
+        );
+      }
+    }
+  }
+
+  return false;
+}
+
 function formatPrincipalVariation() {
   const lineBoard = board.map(row => [...row]);
   const notation = [];
   let lineSide = sideToMove;
   let moveNumber = fullmoveNumber;
+  let lineEnPassant = enPassantSquare;
 
-  for (const move of principalVariation) {
+  for (const uciMove of principalVariation) {
+    const move = uciMoveToMove(uciMove, lineBoard, lineEnPassant);
     const source = squareCoordinates(move.from);
     const piece = lineBoard[source.row][source.column];
-    const text = moveNotation(move, piece);
+    let text = moveNotation(move, piece);
 
     if (lineSide === 'white') {
       notation.push(`${moveNumber}. ${text}`);
@@ -941,11 +1397,20 @@ function formatPrincipalVariation() {
 
     applyVariationMove(lineBoard, move, lineSide);
 
+    const nextSide = lineSide === 'white' ? 'black' : 'white';
+    if (isSideInCheck(lineBoard, nextSide)) {
+      notation[notation.length - 1] += '+';
+    }
+
+    lineEnPassant = move.flags & MOVE_FLAG_DOUBLE_PAWN
+      ? squareName((source.row + squareCoordinates(move.to).row) / 2, source.column)
+      : '-';
+
     if (lineSide === 'black') {
       moveNumber++;
     }
 
-    lineSide = lineSide === 'white' ? 'black' : 'white';
+    lineSide = nextSide;
   }
 
   return notation.join(' ');
@@ -1007,7 +1472,36 @@ function handleEditorPieceClick(event) {
   renderEditorTray();
 }
 
+function refreshPlayControls() {
+  playControlsElement.hidden = currentMode !== 'play';
+
+  for (const button of playColorButtons) {
+    const active = button.dataset.color === playerColor;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  }
+}
+
+function setPlayerColor(color) {
+  if (color !== 'white' && color !== 'black') {
+    return;
+  }
+
+  playerColor = color;
+  isFlipped = color === 'black';
+  updateEvaluation(materialEvaluation, evaluationText);
+  refreshPlayControls();
+  resetBoard();
+}
+
 function setMode(mode) {
+  evaluationRequestNumber++;
+  gameStateRequestNumber++;
+  if (searchAbortController) {
+    searchAbortController.abort();
+  }
+
+  engineMovePending = false;
   currentMode = mode;
   selectedSquare = null;
   legalMoves = [];
@@ -1020,11 +1514,26 @@ function setMode(mode) {
   document.querySelector('#editor-tools').hidden = mode !== 'editor';
   document.querySelector('#side-panel').classList.toggle('editing', mode === 'editor');
 
+  refreshPlayControls();
+  refreshSearchSettings();
   refreshAnalysis();
   renderBoard();
+
+  if (mode === 'analysis') {
+    requestSearch();
+  } else if (mode === 'play') {
+    refreshGameState({ startEngine: true });
+  }
 }
 
 function resetBoard() {
+  evaluationRequestNumber++;
+  gameStateRequestNumber++;
+  if (searchAbortController) {
+    searchAbortController.abort();
+  }
+
+  engineMovePending = false;
   board = createStartingPosition();
   sideToMove = 'white';
   castlingRights = 'KQkq';
@@ -1037,10 +1546,22 @@ function resetBoard() {
   resetHistory();
   renderBoard();
   refreshAnalysis();
-  requestSearch();
+
+  if (currentMode === 'analysis') {
+    requestSearch();
+  } else if (currentMode === 'play') {
+    refreshGameState({ startEngine: true });
+  }
 }
 
 function clearBoard() {
+  evaluationRequestNumber++;
+  gameStateRequestNumber++;
+  if (searchAbortController) {
+    searchAbortController.abort();
+  }
+
+  engineMovePending = false;
   board = Array.from({ length: 8 }, () => Array(8).fill('.'));
   castlingRights = '';
   enPassantSquare = '-';
@@ -1052,10 +1573,17 @@ function clearBoard() {
   resetHistory();
   renderBoard();
   updateEvaluation(0);
+  analysisDepth = 0;
+  principalVariation = [];
+  refreshAnalysis();
 }
 
 for (const button of modeButtons) {
   button.addEventListener('click', () => setMode(button.dataset.mode));
+}
+
+for (const button of playColorButtons) {
+  button.addEventListener('click', () => setPlayerColor(button.dataset.color));
 }
 
 document.querySelector('#flip').addEventListener('click', () => {
@@ -1077,11 +1605,21 @@ searchTimeInput.addEventListener('input', updateSearchSettings);
 searchDepthInput.addEventListener('input', updateSearchSettings);
 searchTimeInput.addEventListener('change', () => {
   updateSearchSettings();
-  requestSearch();
+  if (currentMode === 'analysis') {
+    requestSearch();
+  }
 });
 searchDepthInput.addEventListener('change', () => {
   updateSearchSettings();
-  requestSearch();
+  if (currentMode === 'analysis') {
+    requestSearch();
+  }
+});
+searchInfiniteInput.addEventListener('change', () => {
+  updateSearchSettings();
+  if (currentMode === 'analysis') {
+    requestSearch();
+  }
 });
 document.querySelector('#first-move').addEventListener('click', () => {
   goToHistory(0);
@@ -1112,8 +1650,15 @@ window.addEventListener('resize', syncWorkspaceHeight);
 new ResizeObserver(syncWorkspaceHeight).observe(boardElement);
 renderEditorTray();
 resetHistory();
+refreshPlayControls();
 refreshSearchSettings();
 renderBoard();
 syncWorkspaceHeight();
 refreshAnalysis();
-loadSearchSettings().then(requestSearch);
+loadSearchSettings().then(() => {
+  if (currentMode === 'analysis') {
+    requestSearch();
+  } else if (currentMode === 'play') {
+    refreshGameState({ startEngine: true });
+  }
+});

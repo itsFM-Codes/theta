@@ -51,6 +51,14 @@
             </button>
           </div>
 
+          <div class="play-controls" id="play-controls">
+            <span>Play as</span>
+            <div class="side-selector" role="group" aria-label="Choose your side">
+              <button class="play-color active" data-color="white" aria-pressed="true">White</button>
+              <button class="play-color" data-color="black" aria-pressed="false">Black</button>
+            </div>
+          </div>
+
           <div class="search-settings" id="search-settings" hidden>
             <label>
               <span>Search time</span>
@@ -60,7 +68,11 @@
             <label>
               <span>Depth limit</span>
               <output id="search-depth-value">8</output>
-                <input id="search-depth" type="range" min="1" max="20" step="1" value="8">
+              <input id="search-depth" type="range" min="1" max="20" step="1" value="8">
+            </label>
+            <label class="checkbox-setting">
+              <span>Infinite analysis</span>
+              <input id="search-infinite" type="checkbox">
             </label>
           </div>
 

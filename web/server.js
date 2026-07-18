@@ -202,6 +202,18 @@ function parseUciInfo(line) {
   return info;
 }
 
+function parseUciBestMove(line) {
+  const tokens = line.trim().split(/\s+/);
+
+  if (tokens[0] === 'bestmove' &&
+      tokens[1] &&
+      /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(tokens[1])) {
+    return tokens[1];
+  }
+
+  return null;
+}
+
 function handleSearchStream(request, response) {
   readRequestBody(request, body => {
     let value;
@@ -210,6 +222,7 @@ function handleSearchStream(request, response) {
     let errorOutput = '';
     let timeout;
     let closed = false;
+    let goCommand;
 
     try {
       value = JSON.parse(body);
@@ -221,8 +234,9 @@ function handleSearchStream(request, response) {
     if (typeof value.fen !== 'string' ||
         value.fen.length > 256 ||
         /[\r\n]/.test(value.fen) ||
-        !Number.isInteger(value.depth) ||
-        value.depth < 1 || value.depth > configuredMaxDepth() ||
+        (value.infinite !== true &&
+          (!Number.isInteger(value.depth) ||
+          value.depth < 1 || value.depth > configuredMaxDepth())) ||
         !Number.isInteger(value.timeMs) ||
         value.timeMs < 0 || value.timeMs > 60000) {
       sendJson(response, 400, { error: 'Invalid search request' });
@@ -240,6 +254,17 @@ function handleSearchStream(request, response) {
       'Connection': 'keep-alive'
     });
 
+    function writeEngineLine(line) {
+      const info = parseUciInfo(line);
+      const bestMove = parseUciBestMove(line);
+
+      if (info && !closed) {
+        response.write(`${JSON.stringify(info)}\n`);
+      } else if (bestMove && !closed) {
+        response.write(`${JSON.stringify({ bestMove })}\n`);
+      }
+    }
+
     engine = spawn(ENGINE_PATH, [], {
       cwd: PROJECT_DIRECTORY,
       windowsHide: true
@@ -254,7 +279,6 @@ function handleSearchStream(request, response) {
       for (;;) {
         const lineEnd = output.indexOf('\n');
         let line;
-        let info;
 
         if (lineEnd === -1) {
           break;
@@ -262,11 +286,7 @@ function handleSearchStream(request, response) {
 
         line = output.slice(0, lineEnd).trim();
         output = output.slice(lineEnd + 1);
-        info = parseUciInfo(line);
-
-        if (info && !closed) {
-          response.write(`${JSON.stringify(info)}\n`);
-        }
+        writeEngineLine(line);
       }
     });
 
@@ -281,7 +301,13 @@ function handleSearchStream(request, response) {
     });
 
     engine.on('close', code => {
-      clearTimeout(timeout);
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+
+      if (output.trim()) {
+        writeEngineLine(output.trim());
+      }
 
       if (!closed && code !== 0 && errorOutput.trim()) {
         response.write(`${JSON.stringify({ error: errorOutput.trim() })}\n`);
@@ -297,13 +323,19 @@ function handleSearchStream(request, response) {
       engine.kill();
     });
 
-    timeout = setTimeout(() => engine.kill(), value.timeMs + 1000);
+    if (value.infinite === true) {
+      goCommand = 'go infinite';
+    } else {
+      goCommand = `go depth ${value.depth} movetime ${value.timeMs}`;
+      timeout = setTimeout(() => engine.kill(), value.timeMs + 1000);
+    }
+
     engine.stdin.end([
       'uci',
       'isready',
       `position fen ${value.fen}`,
-      `go depth ${value.depth} movetime ${value.timeMs}`,
-      'quit',
+      goCommand,
+      value.infinite === true ? '' : 'quit',
       ''
     ].join('\n'));
   });

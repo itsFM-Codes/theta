@@ -139,9 +139,23 @@ button {
   background: var(--square-dark);
 }
 
+.square.last-move::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background: #f5e6638a;
+  pointer-events: none;
+}
+
+.square.in-check {
+  box-shadow: inset 0 0 0 clamp(4px, 0.65vw, 8px) #d64d3dcc;
+}
+
 .square.selected::after {
   content: "";
   position: absolute;
+  z-index: 2;
   inset: 0;
   background: #cdd26a99;
 }
@@ -311,6 +325,51 @@ button {
   display: none;
 }
 
+.play-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 -14px 12px;
+  padding: 10px 18px;
+  border-top: 1px solid #3b3936;
+  border-bottom: 1px solid #3b3936;
+  background: #292724;
+  color: #d5d2cc;
+  font-size: 13px;
+}
+
+.side-selector {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  overflow: hidden;
+  border: 1px solid #4a4742;
+  border-radius: 4px;
+}
+
+.play-color {
+  min-width: 68px;
+  padding: 6px 9px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.play-color + .play-color {
+  border-left: 1px solid #4a4742;
+}
+
+.play-color:hover {
+  background: #3a3835;
+  color: #fff;
+}
+
+.play-color.active {
+  background: var(--accent);
+  color: #17200f;
+}
+
 .search-settings label {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -329,6 +388,16 @@ button {
   grid-column: 1 / -1;
   width: 100%;
   accent-color: var(--accent);
+}
+
+.search-settings .checkbox-setting {
+  grid-template-columns: 1fr auto;
+}
+
+.search-settings .checkbox-setting input {
+  grid-column: auto;
+  width: 16px;
+  height: 16px;
 }
 
 .lines {
@@ -412,6 +481,11 @@ button {
   .search-settings {
     margin: 0 -12px 12px;
     padding: 14px 12px;
+  }
+
+  .play-controls {
+    margin: 0 -12px 12px;
+    padding: 10px 12px;
   }
 }
 
