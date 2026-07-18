@@ -19,5 +19,12 @@ void record_quiet_cutoff(
     int depth,
     Move move
 );
+void record_quiet_failures(
+    SearchContext *context,
+    Color color,
+    int depth,
+    const MoveList *moves,
+    int count
+);
 
 #endif // MOVE_ORDERING_H

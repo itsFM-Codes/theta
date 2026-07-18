@@ -20,6 +20,10 @@ typedef struct SearchStatistics {
     uint64_t transposition_key_hits;
     uint64_t transposition_cutoffs;
     uint64_t transposition_stores;
+    uint64_t beta_cutoffs;
+    uint64_t first_move_beta_cutoffs;
+    uint64_t late_move_reductions;
+    uint64_t late_move_researches;
     int selective_depth;
     int elapsed_ms;
     int hashfull;

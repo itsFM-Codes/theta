@@ -204,7 +204,7 @@ static void test_search_reports_statistics(void) {
     callback_invocations = 0;
     search_iterative_with_callback(
         &position,
-        2,
+        5,
         0,
         &best_move,
         &variation,
@@ -213,11 +213,15 @@ static void test_search_reports_statistics(void) {
         0
     );
 
-    assert(callback_invocations == 2);
+    assert(callback_invocations == 5);
     assert(callback_statistics.nodes > 0);
     assert(callback_statistics.quiescence_nodes > 0);
     assert(callback_statistics.selective_depth >= completed_depth);
     assert(callback_statistics.elapsed_ms >= 0);
+    assert(callback_statistics.beta_cutoffs > 0);
+    assert(callback_statistics.first_move_beta_cutoffs <=
+           callback_statistics.beta_cutoffs);
+    assert(callback_statistics.late_move_reductions > 0);
 }
 
 static void test_node_limited_search_returns_a_legal_move(void) {
@@ -263,6 +267,16 @@ static void test_tactical_positions(void) {
     }
 }
 
+static void test_mate_distance_score(void) {
+    Position position;
+
+    assert(position_from_fen(
+        &position,
+        "6k1/5ppp/8/8/8/8/6PP/3Q2K1 w - - 0 1"
+    ));
+    assert(search_position(&position, 2, 0) == SEARCH_CHECKMATE - 1);
+}
+
 int main(void) {
     test_zero_depth_evaluates_position();
     test_search_captures_hanging_rook();
@@ -278,5 +292,6 @@ int main(void) {
     test_search_reports_statistics();
     test_node_limited_search_returns_a_legal_move();
     test_tactical_positions();
+    test_mate_distance_score();
     return 0;
 }

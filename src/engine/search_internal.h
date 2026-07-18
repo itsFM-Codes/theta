@@ -16,6 +16,10 @@ typedef struct SearchContext {
     uint64_t nodes;
     uint64_t node_limit;
     uint64_t quiescence_nodes;
+    uint64_t beta_cutoffs;
+    uint64_t first_move_beta_cutoffs;
+    uint64_t late_move_reductions;
+    uint64_t late_move_researches;
     int selective_depth;
     Move killer_moves[MAX_KILLER_PLY][2];
     int history[2][SQUARE_COUNT][SQUARE_COUNT];

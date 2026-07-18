@@ -55,6 +55,10 @@ int quiescence_search(
         return 0;
     }
 
+    if (ply >= MAX_SEARCH_PLY - 1) {
+        return evaluate_position(position);
+    }
+
     generate_legal_moves(position, &moves);
     in_check = position_is_in_check(position);
 

@@ -10,6 +10,21 @@
 #define MAX_HISTORY_SCORE 3000
 #define TABLE_MOVE_SCORE 20000
 
+static void update_history_score(int *score, int bonus) {
+    if (score == 0) {
+        return;
+    }
+
+    *score += bonus - *score * (bonus < 0 ? -bonus : bonus) /
+        MAX_HISTORY_SCORE;
+    if (*score > MAX_HISTORY_SCORE) {
+        *score = MAX_HISTORY_SCORE;
+    } else if (*score < -MAX_HISTORY_SCORE) {
+        *score = -MAX_HISTORY_SCORE;
+    }
+
+}
+
 static int moves_are_equal(Move first, Move second) {
     return first.from == second.from &&
            first.to == second.to &&
@@ -199,9 +214,32 @@ void record_quiet_cutoff(
 
     bonus = depth * depth;
     history_score = &context->history[color][move.from][move.to];
-    *history_score += bonus;
+    update_history_score(history_score, bonus);
+}
 
-    if (*history_score > MAX_HISTORY_SCORE) {
-        *history_score = MAX_HISTORY_SCORE;
+void record_quiet_failures(
+    SearchContext *context,
+    Color color,
+    int depth,
+    const MoveList *moves,
+    int count
+) {
+    int index;
+    int penalty;
+
+    if (context == 0 || color == COLOR_NONE || moves == 0 || depth <= 0) {
+        return;
+    }
+
+    penalty = -(depth * depth);
+    for (index = 0; index < count && index < moves->count; ++index) {
+        Move move = moves->moves[index];
+
+        if ((move.flags & MOVE_FLAG_CAPTURE) == 0) {
+            update_history_score(
+                &context->history[color][move.from][move.to],
+                penalty
+            );
+        }
     }
 }

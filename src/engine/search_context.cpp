@@ -21,6 +21,10 @@ void initialize_search_context(SearchContext *context, int time_limit_ms) {
     context->nodes = 0;
     context->node_limit = 0;
     context->quiescence_nodes = 0;
+    context->beta_cutoffs = 0;
+    context->first_move_beta_cutoffs = 0;
+    context->late_move_reductions = 0;
+    context->late_move_researches = 0;
     context->selective_depth = 0;
     context->position_key_count = 0;
     memset(context->history, 0, sizeof(context->history));
@@ -112,6 +116,16 @@ void search_get_statistics(
         ? 0
         : context->table.score_cutoffs;
     statistics->transposition_stores = context == 0 ? 0 : context->table.stores;
+    statistics->beta_cutoffs = context == 0 ? 0 : context->beta_cutoffs;
+    statistics->first_move_beta_cutoffs = context == 0
+        ? 0
+        : context->first_move_beta_cutoffs;
+    statistics->late_move_reductions = context == 0
+        ? 0
+        : context->late_move_reductions;
+    statistics->late_move_researches = context == 0
+        ? 0
+        : context->late_move_researches;
     statistics->selective_depth = context == 0 ? 0 : context->selective_depth;
     statistics->elapsed_ms = search_elapsed_ms(context);
     statistics->hashfull = context == 0

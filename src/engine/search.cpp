@@ -10,6 +10,53 @@
 #define REVERSE_FUTILITY_MARGIN 120
 #define LATE_MOVE_PRUNING_START 8
 #define MAX_CHECK_EXTENSION_PLY 8
+#define MAX_LMR_DEPTH 64
+
+static int lmr_reductions[MAX_LMR_DEPTH][MAX_MOVES];
+static int lmr_reductions_initialized = 0;
+
+static void initialize_lmr_reductions(void) {
+    int depth;
+    int move_index;
+
+    if (lmr_reductions_initialized) {
+        return;
+    }
+
+    for (depth = 0; depth < MAX_LMR_DEPTH; ++depth) {
+        for (move_index = 0; move_index < MAX_MOVES; ++move_index) {
+            int reduction = 0;
+
+            if (depth >= 3 && move_index >= 4) {
+                reduction = 1;
+                if (depth >= 6 && move_index >= 8) {
+                    reduction++;
+                }
+                if (depth >= 10 && move_index >= 16) {
+                    reduction++;
+                }
+                if (reduction > depth - 2) {
+                    reduction = depth - 2;
+                }
+            }
+            lmr_reductions[depth][move_index] = reduction;
+        }
+    }
+
+    lmr_reductions_initialized = 1;
+}
+
+static int late_move_reduction(int depth, int move_index) {
+    initialize_lmr_reductions();
+
+    if (depth >= MAX_LMR_DEPTH) {
+        depth = MAX_LMR_DEPTH - 1;
+    }
+    if (move_index >= MAX_MOVES) {
+        move_index = MAX_MOVES - 1;
+    }
+    return depth < 0 || move_index < 0 ? 0 : lmr_reductions[depth][move_index];
+}
 
 static int score_to_table(int score, int ply) {
     if (score > SEARCH_CHECKMATE - MAX_PRINCIPAL_VARIATION) {
@@ -112,6 +159,20 @@ static int negamax(
 
     if (search_is_draw(context, position)) {
         return 0;
+    }
+
+    if (ply >= MAX_SEARCH_PLY - 1) {
+        return evaluate_position(position);
+    }
+
+    if (alpha < -SEARCH_CHECKMATE + ply) {
+        alpha = -SEARCH_CHECKMATE + ply;
+    }
+    if (beta > SEARCH_CHECKMATE - ply - 1) {
+        beta = SEARCH_CHECKMATE - ply - 1;
+    }
+    if (alpha >= beta) {
+        return alpha;
     }
 
     if (depth <= 0) {
@@ -243,8 +304,13 @@ skip_null_cutoff:
         if (depth >= 3 && index >= 4 &&
             (move.flags & MOVE_FLAG_CAPTURE) == 0 &&
             !gives_check) {
-            search_depth--;
-            reduced = 1;
+            int reduction = late_move_reduction(depth, index);
+
+            if (reduction > 0) {
+                search_depth -= reduction;
+                reduced = 1;
+                context->late_move_reductions++;
+            }
         }
 
         if (gives_check && ply < MAX_CHECK_EXTENSION_PLY) {
@@ -265,6 +331,7 @@ skip_null_cutoff:
             );
 
             if (score > alpha && score < beta && reduced) {
+                context->late_move_researches++;
                 score = -negamax(
                     position, depth - 1, -alpha - 1, -alpha, ply + 1, 1,
                     &child_variation, context
@@ -286,6 +353,17 @@ skip_null_cutoff:
         }
 
         if (score >= beta) {
+            context->beta_cutoffs++;
+            if (index == 0) {
+                context->first_move_beta_cutoffs++;
+            }
+            record_quiet_failures(
+                context,
+                position->side_to_move,
+                depth,
+                &moves,
+                index
+            );
             record_quiet_cutoff(
                 context,
                 position->side_to_move,
@@ -448,6 +526,7 @@ int search_position(Position *position, int depth, Move *best_move) {
     int score;
 
     initialize_search_context(&context, 0);
+    initialize_lmr_reductions();
     search_push_position(&context, position);
     score = search_position_with_variation(
         position,
@@ -514,6 +593,7 @@ int search_iterative_with_callback_and_node_limit(
     }
 
     initialize_search_context(&context, time_limit_ms);
+    initialize_lmr_reductions();
     search_set_node_limit(&context, node_limit);
     search_push_position(&context, position);
 
