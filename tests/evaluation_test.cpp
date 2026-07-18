@@ -89,6 +89,10 @@ static void test_pawn_structure(void) {
     Position separate_pawns;
     Position passed_pawn;
     Position blocked_pawn;
+    Position unsupported_passer;
+    Position supported_passer;
+    Position connected_passers;
+    Position separate_passers;
 
     clear_position(&doubled_pawns);
     position_set_piece(&doubled_pawns, make_square(6, 3), PIECE_WHITE_PAWN);
@@ -110,6 +114,55 @@ static void test_pawn_structure(void) {
 
     assert(pawn_structure_score(&passed_pawn) >
            pawn_structure_score(&blocked_pawn));
+
+    clear_position(&unsupported_passer);
+    position_set_piece(
+        &unsupported_passer,
+        make_square(3, 3),
+        PIECE_WHITE_PAWN
+    );
+
+    clear_position(&supported_passer);
+    position_set_piece(
+        &supported_passer,
+        make_square(3, 3),
+        PIECE_WHITE_PAWN
+    );
+    position_set_piece(
+        &supported_passer,
+        make_square(4, 2),
+        PIECE_WHITE_PAWN
+    );
+
+    assert(pawn_structure_score(&supported_passer) >
+           pawn_structure_score(&unsupported_passer));
+
+    clear_position(&connected_passers);
+    position_set_piece(
+        &connected_passers,
+        make_square(3, 3),
+        PIECE_WHITE_PAWN
+    );
+    position_set_piece(
+        &connected_passers,
+        make_square(3, 4),
+        PIECE_WHITE_PAWN
+    );
+
+    clear_position(&separate_passers);
+    position_set_piece(
+        &separate_passers,
+        make_square(3, 3),
+        PIECE_WHITE_PAWN
+    );
+    position_set_piece(
+        &separate_passers,
+        make_square(3, 5),
+        PIECE_WHITE_PAWN
+    );
+
+    assert(pawn_structure_score(&connected_passers) >
+           pawn_structure_score(&separate_passers));
 }
 
 static void test_king_safety(void) {
