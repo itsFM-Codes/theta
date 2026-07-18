@@ -48,6 +48,7 @@ let dragMoveRequest = null;
 let dragMoveApplied = false;
 let dragDropPending = false;
 let materialEvaluation = 0;
+let evaluationText = '+0.00';
 let evaluationRequestNumber = 0;
 let searchAbortController = null;
 let analysisDepth = searchDepth;
@@ -494,7 +495,7 @@ async function requestSearch() {
         }
 
         if (requestNumber === evaluationRequestNumber) {
-          updateEvaluation(update.evaluation);
+          updateEvaluation(update.evaluation, formatSearchScore(update));
           analysisDepth = update.depth;
           principalVariation = update.pv.map(uciMoveToMove);
           refreshAnalysis();
@@ -766,14 +767,26 @@ function formatEvaluation(value) {
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)}`;
 }
 
-function updateEvaluation(evaluation) {
+function formatSearchScore(update) {
+  if (update.scoreType === 'mate' && Number.isFinite(update.mate)) {
+    return `#${update.mate}`;
+  }
+
+  return formatEvaluation(update.evaluation / 100);
+}
+
+function updateEvaluation(
+  evaluation,
+  labelText = formatEvaluation(evaluation / 100)
+) {
   const bar = document.querySelector('.evaluation');
   const fill = document.querySelector('#eval-fill');
   const label = document.querySelector('#eval-label');
   const whitePercent = Math.max(0, Math.min(100, 50 + evaluation / 20));
 
   materialEvaluation = evaluation;
-  label.textContent = formatEvaluation(evaluation / 100);
+  evaluationText = labelText;
+  label.textContent = evaluationText;
   fill.style.height = `${whitePercent}%`;
   bar.classList.toggle('flipped', isFlipped);
 }
@@ -872,8 +885,6 @@ function formatPrincipalVariation() {
 }
 
 function refreshAnalysis() {
-  const evaluationLabel = formatEvaluation(materialEvaluation / 100);
-
   document.querySelector('#depth').textContent = `Depth ${analysisDepth}`;
 
   if (principalVariation.length === 0) {
@@ -883,7 +894,7 @@ function refreshAnalysis() {
 
   linesElement.innerHTML = [
     '<li>',
-    `<span class="line-eval">${evaluationLabel}</span>`,
+    `<span class="line-eval">${evaluationText}</span>`,
     `<span class="line-moves">${formatPrincipalVariation()}</span>`,
     '</li>'
   ].join('');

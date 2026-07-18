@@ -4,12 +4,18 @@ const path = require('path');
 const { execFile, spawn } = require('child_process');
 
 const HOST = '127.0.0.1';
-const PORT = 8042;
+const DEFAULT_PORT = 8042;
+const requestedPort = Number(process.env.THETA_WEB_PORT);
+const PORT = Number.isInteger(requestedPort) &&
+  requestedPort > 0 && requestedPort <= 65535
+  ? requestedPort
+  : DEFAULT_PORT;
 const WEB_DIRECTORY = __dirname;
 const PROJECT_DIRECTORY = path.resolve(WEB_DIRECTORY, '..');
 const ENGINE_PATH = path.join(PROJECT_DIRECTORY, 'build', 'theta.exe');
 const CONFIG_PATH = path.join(PROJECT_DIRECTORY, 'config', 'config.conf');
 const MAX_REQUEST_SIZE = 32_768;
+const MATE_DISPLAY_SCORE = 100000;
 
 const CONTENT_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -133,17 +139,67 @@ function handleEngineRequest(request, response, command) {
 }
 
 function parseUciInfo(line) {
-  const match = line.match(/^info depth (\d+) score cp (-?\d+) pv(?: (.*))?$/);
+  const tokens = line.trim().split(/\s+/);
+  const info = {
+    depth: null,
+    selectiveDepth: null,
+    evaluation: null,
+    scoreType: null,
+    mate: null,
+    nodes: null,
+    nps: null,
+    timeMs: null,
+    hashfull: null,
+    pv: []
+  };
+  let index;
 
-  if (!match) {
+  if (tokens[0] !== 'info') {
     return null;
   }
 
-  return {
-    depth: Number(match[1]),
-    evaluation: Number(match[2]),
-    pv: match[3] ? match[3].trim().split(/\s+/) : []
-  };
+  for (index = 1; index < tokens.length; ++index) {
+    const token = tokens[index];
+
+    if (token === 'depth' && index + 1 < tokens.length) {
+      info.depth = Number(tokens[++index]);
+    } else if (token === 'seldepth' && index + 1 < tokens.length) {
+      info.selectiveDepth = Number(tokens[++index]);
+    } else if (token === 'score' && index + 2 < tokens.length) {
+      const scoreType = tokens[++index];
+      const scoreValue = Number(tokens[++index]);
+
+      if (scoreType === 'cp') {
+        info.scoreType = 'cp';
+        info.evaluation = scoreValue;
+      } else if (scoreType === 'mate') {
+        info.scoreType = 'mate';
+        info.mate = scoreValue;
+        info.evaluation = scoreValue >= 0
+          ? MATE_DISPLAY_SCORE
+          : -MATE_DISPLAY_SCORE;
+      }
+    } else if (token === 'nodes' && index + 1 < tokens.length) {
+      info.nodes = Number(tokens[++index]);
+    } else if (token === 'nps' && index + 1 < tokens.length) {
+      info.nps = Number(tokens[++index]);
+    } else if (token === 'time' && index + 1 < tokens.length) {
+      info.timeMs = Number(tokens[++index]);
+    } else if (token === 'hashfull' && index + 1 < tokens.length) {
+      info.hashfull = Number(tokens[++index]);
+    } else if (token === 'pv') {
+      info.pv = tokens.slice(index + 1);
+      break;
+    }
+  }
+
+  if (!Number.isFinite(info.depth) ||
+      !Number.isFinite(info.evaluation) ||
+      info.scoreType === null) {
+    return null;
+  }
+
+  return info;
 }
 
 function handleSearchStream(request, response) {
