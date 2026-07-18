@@ -99,11 +99,17 @@ int quiescence_search(
 
         if (!in_check && (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
             stand_pat + capture_value(position, move) + DELTA_MARGIN < alpha) {
+            if (context != 0) {
+                context->delta_prunes++;
+            }
             continue;
         }
 
         if (!in_check && (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
             static_exchange_evaluation(position, move) < 0) {
+            if (context != 0) {
+                context->see_prunes++;
+            }
             continue;
         }
 

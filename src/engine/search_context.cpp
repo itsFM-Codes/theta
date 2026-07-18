@@ -14,6 +14,8 @@ static void clear_move(Move *move) {
 
 void initialize_search_context(SearchContext *context, int time_limit_ms) {
     int ply;
+    int from;
+    int to;
 
     context->start_time = std::chrono::steady_clock::now();
     context->time_limit_ms = time_limit_ms;
@@ -23,16 +25,40 @@ void initialize_search_context(SearchContext *context, int time_limit_ms) {
     context->quiescence_nodes = 0;
     context->beta_cutoffs = 0;
     context->first_move_beta_cutoffs = 0;
+    context->null_move_attempts = 0;
+    context->null_move_cutoffs = 0;
+    context->reverse_futility_prunes = 0;
+    context->late_move_prunes = 0;
+    context->static_futility_prunes = 0;
+    context->razoring_prunes = 0;
+    context->delta_prunes = 0;
+    context->see_prunes = 0;
     context->late_move_reductions = 0;
     context->late_move_researches = 0;
+    context->aspiration_failures = 0;
+    context->aspiration_researches = 0;
     context->selective_depth = 0;
     context->position_key_count = 0;
     memset(context->history, 0, sizeof(context->history));
+    memset(context->capture_history, 0, sizeof(context->capture_history));
+    memset(context->static_evaluation_valid, 0,
+           sizeof(context->static_evaluation_valid));
     initialize_transposition_table(&context->table);
 
     for (ply = 0; ply < MAX_KILLER_PLY; ++ply) {
         clear_move(&context->killer_moves[ply][0]);
         clear_move(&context->killer_moves[ply][1]);
+    }
+
+    for (from = 0; from < SQUARE_COUNT; ++from) {
+        for (to = 0; to < SQUARE_COUNT; ++to) {
+            clear_move(&context->counter_moves[from][to]);
+        }
+    }
+
+    for (ply = 0; ply < MAX_SEARCH_PLY; ++ply) {
+        clear_move(&context->line_moves[ply]);
+        context->static_evaluations[ply] = 0;
     }
 }
 
@@ -120,12 +146,34 @@ void search_get_statistics(
     statistics->first_move_beta_cutoffs = context == 0
         ? 0
         : context->first_move_beta_cutoffs;
+    statistics->null_move_attempts = context == 0
+        ? 0
+        : context->null_move_attempts;
+    statistics->null_move_cutoffs = context == 0
+        ? 0
+        : context->null_move_cutoffs;
+    statistics->reverse_futility_prunes = context == 0
+        ? 0
+        : context->reverse_futility_prunes;
+    statistics->late_move_prunes = context == 0 ? 0 : context->late_move_prunes;
+    statistics->static_futility_prunes = context == 0
+        ? 0
+        : context->static_futility_prunes;
+    statistics->razoring_prunes = context == 0 ? 0 : context->razoring_prunes;
+    statistics->delta_prunes = context == 0 ? 0 : context->delta_prunes;
+    statistics->see_prunes = context == 0 ? 0 : context->see_prunes;
     statistics->late_move_reductions = context == 0
         ? 0
         : context->late_move_reductions;
     statistics->late_move_researches = context == 0
         ? 0
         : context->late_move_researches;
+    statistics->aspiration_failures = context == 0
+        ? 0
+        : context->aspiration_failures;
+    statistics->aspiration_researches = context == 0
+        ? 0
+        : context->aspiration_researches;
     statistics->selective_depth = context == 0 ? 0 : context->selective_depth;
     statistics->elapsed_ms = search_elapsed_ms(context);
     statistics->hashfull = context == 0

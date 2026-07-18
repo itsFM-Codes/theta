@@ -26,5 +26,20 @@ void record_quiet_failures(
     const MoveList *moves,
     int count
 );
+void record_capture_cutoff(
+    SearchContext *context,
+    const Position *position,
+    Color color,
+    int depth,
+    Move move
+);
+void record_capture_failures(
+    SearchContext *context,
+    const Position *position,
+    Color color,
+    int depth,
+    const MoveList *moves,
+    int count
+);
 
 #endif // MOVE_ORDERING_H

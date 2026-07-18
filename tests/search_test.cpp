@@ -222,6 +222,16 @@ static void test_search_reports_statistics(void) {
     assert(callback_statistics.first_move_beta_cutoffs <=
            callback_statistics.beta_cutoffs);
     assert(callback_statistics.late_move_reductions > 0);
+    assert(callback_statistics.null_move_attempts > 0);
+    assert(callback_statistics.null_move_cutoffs <=
+           callback_statistics.null_move_attempts);
+    assert(callback_statistics.reverse_futility_prunes +
+           callback_statistics.late_move_prunes +
+           callback_statistics.static_futility_prunes +
+           callback_statistics.razoring_prunes > 0);
+    assert(callback_statistics.delta_prunes + callback_statistics.see_prunes > 0);
+    assert(callback_statistics.aspiration_researches <=
+           callback_statistics.aspiration_failures);
 }
 
 static void test_node_limited_search_returns_a_legal_move(void) {

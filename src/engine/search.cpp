@@ -9,6 +9,9 @@
 
 #define REVERSE_FUTILITY_MARGIN 120
 #define LATE_MOVE_PRUNING_START 8
+#define STATIC_FUTILITY_MARGIN 95
+#define RAZORING_MARGIN 180
+#define SEARCH_HISTORY_LIMIT 3000
 #define MAX_CHECK_EXTENSION_PLY 8
 #define MAX_LMR_DEPTH 64
 
@@ -82,21 +85,148 @@ static int score_from_table(int score, int ply) {
     return score;
 }
 
-static int has_non_pawn_material(const Position *position, Color color) {
+static int has_null_move_material(const Position *position, Color color) {
+    int minor_count = 0;
     int square;
 
     for (square = 0; square < SQUARE_COUNT; ++square) {
         Piece piece = position_piece_at(position, square);
         PieceType type = piece_type(piece);
 
-        if (piece_color(piece) == color &&
-            type != PIECE_TYPE_PAWN && type != PIECE_TYPE_KING &&
-            type != PIECE_TYPE_NONE) {
+        if (piece_color(piece) != color) {
+            continue;
+        }
+
+        if (type == PIECE_TYPE_QUEEN || type == PIECE_TYPE_ROOK) {
             return 1;
+        }
+
+        if (type == PIECE_TYPE_BISHOP || type == PIECE_TYPE_KNIGHT) {
+            minor_count++;
         }
     }
 
-    return 0;
+    return minor_count >= 2;
+}
+
+static int move_is_quiet(Move move) {
+    return (move.flags & (MOVE_FLAG_CAPTURE | MOVE_FLAG_PROMOTION)) == 0;
+}
+
+static int static_futility_margin(int depth, int improving) {
+    int margin = STATIC_FUTILITY_MARGIN * depth;
+
+    return improving ? margin + 45 : margin;
+}
+
+static int late_move_pruning_threshold(
+    int depth,
+    int is_pv_node,
+    int improving
+) {
+    int threshold = LATE_MOVE_PRUNING_START + depth * 4;
+
+    if (!is_pv_node) {
+        threshold -= 2;
+    }
+    if (improving) {
+        threshold += 3;
+    }
+    if (threshold < 4) {
+        threshold = 4;
+    }
+
+    return threshold;
+}
+
+static int null_move_reduction(int depth, int static_score, int beta) {
+    int reduction = 2 + depth / 4;
+    int margin = static_score - beta;
+
+    if (margin > 300) {
+        reduction++;
+    }
+    if (margin > 600) {
+        reduction++;
+    }
+    if (reduction > depth - 1) {
+        reduction = depth - 1;
+    }
+
+    return reduction;
+}
+
+static int search_static_evaluation(
+    Position *position,
+    SearchContext *context,
+    int ply
+) {
+    int score = evaluate_position(position);
+
+    if (context != 0 && ply >= 0 && ply < MAX_SEARCH_PLY) {
+        context->static_evaluations[ply] = score;
+        context->static_evaluation_valid[ply] = 1;
+    }
+
+    return score;
+}
+
+static int position_is_improving(
+    const SearchContext *context,
+    int ply,
+    int static_score
+) {
+    if (context == 0 || ply < 2 || ply >= MAX_SEARCH_PLY ||
+        !context->static_evaluation_valid[ply - 2]) {
+        return 0;
+    }
+
+    return static_score > context->static_evaluations[ply - 2];
+}
+
+static int adjusted_late_move_reduction(
+    const SearchContext *context,
+    Color moving_color,
+    int depth,
+    int move_index,
+    int is_pv_node,
+    int improving,
+    Move move
+) {
+    int reduction = late_move_reduction(depth, move_index);
+    int history_score = 0;
+
+    if (reduction <= 0) {
+        return 0;
+    }
+
+    if (is_pv_node) {
+        reduction--;
+    }
+    if (improving) {
+        reduction--;
+    } else {
+        reduction++;
+    }
+
+    if (context != 0 && moving_color != COLOR_NONE) {
+        history_score = context->history[moving_color][move.from][move.to];
+    }
+
+    if (history_score > SEARCH_HISTORY_LIMIT / 3) {
+        reduction--;
+    } else if (history_score < -SEARCH_HISTORY_LIMIT / 3) {
+        reduction++;
+    }
+
+    if (reduction < 0) {
+        reduction = 0;
+    }
+    if (reduction > depth - 2) {
+        reduction = depth - 2;
+    }
+
+    return reduction;
 }
 
 static int move_gives_check(Position *position, Move move) {
@@ -134,6 +264,7 @@ static int negamax(
     int beta,
     int ply,
     int allow_null_move,
+    int is_pv_node,
     PrincipalVariation *variation,
     SearchContext *context
 ) {
@@ -142,6 +273,8 @@ static int negamax(
     uint64_t key;
     int table_score;
     int in_check;
+    int static_score;
+    int improving;
     int original_alpha = alpha;
     int index;
 
@@ -180,31 +313,62 @@ static int negamax(
     }
 
     in_check = position_is_in_check(position);
+    static_score = search_static_evaluation(position, context, ply);
+    improving = position_is_improving(context, ply, static_score);
+
+    if (depth <= 2 && !in_check &&
+        alpha > -SEARCH_CHECKMATE + MAX_PRINCIPAL_VARIATION &&
+        static_score + RAZORING_MARGIN * depth < alpha) {
+        int razor_score = quiescence_search(
+            position,
+            alpha - 1,
+            alpha,
+            ply,
+            context
+        );
+
+        if (search_has_stopped(context)) {
+            return 0;
+        }
+
+        if (razor_score <= alpha) {
+            if (context != 0) {
+                context->razoring_prunes++;
+            }
+            return razor_score;
+        }
+    }
 
     if (depth <= 2 && !in_check && beta < SEARCH_INFINITY) {
-        int static_score = evaluate_position(position);
-
         if (static_score - depth * REVERSE_FUTILITY_MARGIN >= beta) {
+            if (context != 0) {
+                context->reverse_futility_prunes++;
+            }
             return beta;
         }
     }
 
     if (allow_null_move && depth >= 3 && !in_check && beta < SEARCH_INFINITY &&
-        has_non_pawn_material(position, position->side_to_move)) {
+        has_null_move_material(position, position->side_to_move)) {
         Position null_position = *position;
         PrincipalVariation null_variation;
+        int reduction = null_move_reduction(depth, static_score, beta);
         int null_score;
 
+        if (context != 0) {
+            context->null_move_attempts++;
+        }
         null_position.side_to_move = opposite_color(null_position.side_to_move);
         null_position.en_passant_square = NO_SQUARE;
         null_position.halfmove_clock++;
         search_push_position(context, &null_position);
         null_score = -negamax(
             &null_position,
-            depth - 3,
+            depth - 1 - reduction,
             -beta,
             -beta + 1,
             ply + 1,
+            0,
             0,
             &null_variation,
             context
@@ -225,6 +389,7 @@ static int negamax(
                     -beta + 1,
                     ply,
                     0,
+                    0,
                     &verification_variation,
                     context
                 );
@@ -238,6 +403,9 @@ static int negamax(
                 }
             }
 
+            if (context != 0) {
+                context->null_move_cutoffs++;
+            }
             return beta;
         }
     }
@@ -261,6 +429,12 @@ skip_null_cutoff:
         return score_from_table(table_score, ply);
     }
 
+    if (!is_pv_node && depth >= 5 && !in_check &&
+        (!is_valid_square(table_move.from) ||
+         !is_valid_square(table_move.to))) {
+        depth--;
+    }
+
     generate_legal_moves(position, &moves);
     order_moves(position, &moves, 1, context, ply, &table_move);
 
@@ -280,6 +454,8 @@ skip_null_cutoff:
         int reduced = 0;
         int gives_check;
         int promotes_pawn;
+        int quiet_move;
+        Color moving_color;
         int score;
 
         if (search_has_stopped(context)) {
@@ -288,10 +464,29 @@ skip_null_cutoff:
 
         gives_check = move_gives_check(position, move);
         promotes_pawn = pawn_reaches_seventh_rank(position, move);
+        quiet_move = move_is_quiet(move);
+        moving_color = position->side_to_move;
 
         if (depth <= 2 && !in_check &&
-            index >= LATE_MOVE_PRUNING_START + depth * 4 &&
-            (move.flags & MOVE_FLAG_CAPTURE) == 0 && !gives_check) {
+            index >= late_move_pruning_threshold(
+                depth,
+                is_pv_node,
+                improving
+            ) &&
+            quiet_move && !gives_check) {
+            if (context != 0) {
+                context->late_move_prunes++;
+            }
+            continue;
+        }
+
+        if (depth <= 3 && !is_pv_node && !in_check && index > 0 &&
+            quiet_move && !gives_check &&
+            alpha > -SEARCH_CHECKMATE + MAX_PRINCIPAL_VARIATION &&
+            static_score + static_futility_margin(depth, improving) <= alpha) {
+            if (context != 0) {
+                context->static_futility_prunes++;
+            }
             continue;
         }
 
@@ -300,11 +495,22 @@ skip_null_cutoff:
         }
 
         search_push_position(context, position);
+        if (context != 0 && ply >= 0 && ply < MAX_SEARCH_PLY) {
+            context->line_moves[ply] = move;
+        }
 
         if (depth >= 3 && index >= 4 &&
-            (move.flags & MOVE_FLAG_CAPTURE) == 0 &&
+            quiet_move &&
             !gives_check) {
-            int reduction = late_move_reduction(depth, index);
+            int reduction = adjusted_late_move_reduction(
+                context,
+                moving_color,
+                depth,
+                index,
+                is_pv_node,
+                improving,
+                move
+            );
 
             if (reduction > 0) {
                 search_depth -= reduction;
@@ -322,11 +528,13 @@ skip_null_cutoff:
         if (index == 0) {
             score = -negamax(
                 position, search_depth, -beta, -alpha, ply + 1, 1,
+                is_pv_node,
                 &child_variation, context
             );
         } else {
             score = -negamax(
                 position, search_depth, -alpha - 1, -alpha, ply + 1, 1,
+                0,
                 &child_variation, context
             );
 
@@ -334,6 +542,7 @@ skip_null_cutoff:
                 context->late_move_researches++;
                 score = -negamax(
                     position, depth - 1, -alpha - 1, -alpha, ply + 1, 1,
+                    0,
                     &child_variation, context
                 );
             }
@@ -341,6 +550,7 @@ skip_null_cutoff:
             if (score > alpha && score < beta) {
                 score = -negamax(
                     position, depth - 1, -beta, -alpha, ply + 1, 1,
+                    is_pv_node,
                     &child_variation, context
                 );
             }
@@ -364,13 +574,31 @@ skip_null_cutoff:
                 &moves,
                 index
             );
-            record_quiet_cutoff(
+            record_capture_failures(
                 context,
+                position,
                 position->side_to_move,
-                ply,
                 depth,
-                move
+                &moves,
+                index
             );
+            if (quiet_move) {
+                record_quiet_cutoff(
+                    context,
+                    position->side_to_move,
+                    ply,
+                    depth,
+                    move
+                );
+            } else {
+                record_capture_cutoff(
+                    context,
+                    position,
+                    position->side_to_move,
+                    depth,
+                    move
+                );
+            }
             update_variation(variation, move, &child_variation);
             store_transposition_table(
                 &context->table,
@@ -415,6 +643,7 @@ static int search_position_with_variation(
     Move table_move;
     uint64_t key;
     int table_score;
+    int original_alpha = alpha;
     int index;
 
     clear_variation(variation);
@@ -473,6 +702,7 @@ static int search_position_with_variation(
         Move move = moves.moves[index];
         PrincipalVariation child_variation;
         UndoState undo;
+        int quiet_move = move_is_quiet(move);
         int score;
 
         if (search_has_stopped(context)) {
@@ -484,22 +714,103 @@ static int search_position_with_variation(
         }
 
         search_push_position(context, position);
+        if (context != 0) {
+            context->line_moves[0] = move;
+        }
 
-        score = -negamax(
-            position,
-            depth - 1,
-            -beta,
-            -alpha,
-            1,
-            1,
-            &child_variation,
-            context
-        );
+        if (index == 0) {
+            score = -negamax(
+                position,
+                depth - 1,
+                -beta,
+                -alpha,
+                1,
+                1,
+                1,
+                &child_variation,
+                context
+            );
+        } else {
+            score = -negamax(
+                position,
+                depth - 1,
+                -alpha - 1,
+                -alpha,
+                1,
+                1,
+                0,
+                &child_variation,
+                context
+            );
+
+            if (score > alpha && score < beta) {
+                score = -negamax(
+                    position,
+                    depth - 1,
+                    -beta,
+                    -alpha,
+                    1,
+                    1,
+                    1,
+                    &child_variation,
+                    context
+                );
+            }
+        }
         search_pop_position(context);
         undo_move(position, move, &undo);
 
         if (search_has_stopped(context)) {
             return 0;
+        }
+
+        if (score >= beta) {
+            context->beta_cutoffs++;
+            if (index == 0) {
+                context->first_move_beta_cutoffs++;
+            }
+            record_quiet_failures(
+                context,
+                position->side_to_move,
+                depth,
+                &moves,
+                index
+            );
+            record_capture_failures(
+                context,
+                position,
+                position->side_to_move,
+                depth,
+                &moves,
+                index
+            );
+            if (quiet_move) {
+                record_quiet_cutoff(
+                    context,
+                    position->side_to_move,
+                    0,
+                    depth,
+                    move
+                );
+            } else {
+                record_capture_cutoff(
+                    context,
+                    position,
+                    position->side_to_move,
+                    depth,
+                    move
+                );
+            }
+            update_variation(variation, move, &child_variation);
+            store_transposition_table(
+                &context->table,
+                key,
+                depth,
+                score_to_table(beta, 0),
+                TRANSPOSITION_LOWER_BOUND,
+                move
+            );
+            return beta;
         }
 
         if (score > alpha) {
@@ -513,7 +824,9 @@ static int search_position_with_variation(
         key,
         depth,
         score_to_table(alpha, 0),
-        TRANSPOSITION_EXACT,
+        alpha <= original_alpha
+            ? TRANSPOSITION_UPPER_BOUND
+            : TRANSPOSITION_EXACT,
         variation->count > 0 ? variation->moves[0] : table_move
     );
 
@@ -570,6 +883,7 @@ int search_iterative_with_callback_and_node_limit(
     int depth;
     int score = 0;
     int completed_score;
+    int last_score_delta = 0;
 
     if (best_move != 0) {
         best_move->from = NO_SQUARE;
@@ -613,8 +927,14 @@ int search_iterative_with_callback_and_node_limit(
         int beta = SEARCH_INFINITY;
 
         if (depth > 1) {
-            alpha = completed_score - 50;
-            beta = completed_score + 50;
+            int window = 35 + depth * 5 + last_score_delta / 2;
+
+            if (window > 200) {
+                window = 200;
+            }
+
+            alpha = completed_score - window;
+            beta = completed_score + window;
         }
 
         score = search_position_with_variation(
@@ -631,6 +951,8 @@ int search_iterative_with_callback_and_node_limit(
         }
 
         if (score <= alpha || score >= beta) {
+            context.aspiration_failures++;
+            context.aspiration_researches++;
             score = search_position_with_variation(
                 position,
                 depth,
@@ -645,6 +967,9 @@ int search_iterative_with_callback_and_node_limit(
             }
         }
 
+        last_score_delta = score > completed_score
+            ? score - completed_score
+            : completed_score - score;
         completed_score = score;
 
         if (current_variation.count > 0) {

@@ -2,9 +2,13 @@
 
 #define DOUBLED_PAWN_PENALTY 12
 #define ISOLATED_PAWN_PENALTY 10
+#define PAWN_ISLAND_PENALTY 6
+#define BACKWARD_PAWN_PENALTY 8
+#define CANDIDATE_PASSED_PAWN_BONUS 6
 #define SUPPORTED_PASSED_PAWN_BONUS 6
 #define CONNECTED_PASSED_PAWN_BONUS 5
 #define BLOCKED_PASSED_PAWN_PENALTY 8
+#define PASSED_PAWN_KING_DISTANCE_SCALE 2
 
 static int count_pawns_on_file(
     const Position *position,
@@ -55,6 +59,73 @@ static int passed_pawn_bonus(int square, Color color) {
     int advancement = color == COLOR_WHITE ? 6 - row : row - 1;
 
     return 10 + advancement * 10;
+}
+
+static int king_square(const Position *position, Color color) {
+    Piece king = color == COLOR_WHITE ? PIECE_WHITE_KING : PIECE_BLACK_KING;
+    int square;
+
+    for (square = 0; square < SQUARE_COUNT; ++square) {
+        if (position_piece_at(position, square) == king) {
+            return square;
+        }
+    }
+
+    return NO_SQUARE;
+}
+
+static int distance_between_squares(int first, int second) {
+    int row_distance;
+    int column_distance;
+
+    if (!is_valid_square(first) || !is_valid_square(second)) {
+        return 0;
+    }
+
+    row_distance = square_row(first) - square_row(second);
+    column_distance = square_column(first) - square_column(second);
+    if (row_distance < 0) {
+        row_distance = -row_distance;
+    }
+    if (column_distance < 0) {
+        column_distance = -column_distance;
+    }
+
+    return row_distance > column_distance ? row_distance : column_distance;
+}
+
+static int passed_pawn_king_distance_bonus(
+    const Position *position,
+    int square,
+    Color color
+) {
+    int own_king = king_square(position, color);
+    int opposing_king = king_square(position, opposite_color(color));
+    int promotion_square = make_square(
+        color == COLOR_WHITE ? 0 : BOARD_SIZE - 1,
+        square_column(square)
+    );
+    int own_distance;
+    int opposing_distance;
+    int bonus;
+
+    if (!is_valid_square(own_king) || !is_valid_square(opposing_king)) {
+        return 0;
+    }
+
+    own_distance = distance_between_squares(own_king, square);
+    opposing_distance = distance_between_squares(opposing_king, promotion_square);
+    bonus = (opposing_distance - own_distance) *
+            PASSED_PAWN_KING_DISTANCE_SCALE;
+
+    if (bonus > 16) {
+        return 16;
+    }
+    if (bonus < -16) {
+        return -16;
+    }
+
+    return bonus;
 }
 
 static int pawn_is_supported(const Position *position, int square, Color color) {
@@ -123,11 +194,158 @@ static int pawn_is_blocked(const Position *position, int square, Color color) {
            position_piece_at_coordinates(position, front_row, column) != PIECE_NONE;
 }
 
+static int pawn_controls_square(
+    const Position *position,
+    Color color,
+    int target_square
+) {
+    int target_row = square_row(target_square);
+    int target_column = square_column(target_square);
+    int pawn_row = color == COLOR_WHITE ? target_row + 1 : target_row - 1;
+    Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
+    int file;
+
+    if (pawn_row < 0 || pawn_row >= BOARD_SIZE) {
+        return 0;
+    }
+
+    for (file = target_column - 1; file <= target_column + 1; file += 2) {
+        if (file >= 0 && file < BOARD_SIZE &&
+            position_piece_at_coordinates(position, pawn_row, file) == pawn) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int pawn_has_adjacent_helper(
+    const Position *position,
+    int square,
+    Color color
+) {
+    int row = square_row(square);
+    int column = square_column(square);
+    Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
+    int file;
+
+    for (file = column - 1; file <= column + 1; file += 2) {
+        int helper_row;
+
+        if (file < 0 || file >= BOARD_SIZE) {
+            continue;
+        }
+
+        for (helper_row = 0; helper_row < BOARD_SIZE; ++helper_row) {
+            if (position_piece_at_coordinates(position, helper_row, file) !=
+                pawn) {
+                continue;
+            }
+
+            if ((color == COLOR_WHITE && helper_row >= row) ||
+                (color == COLOR_BLACK && helper_row <= row)) {
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+static int count_opposing_pawns_ahead(
+    const Position *position,
+    int square,
+    Color color,
+    int include_adjacent_files
+) {
+    int row = square_row(square);
+    int column = square_column(square);
+    int row_step = color == COLOR_WHITE ? -1 : 1;
+    Piece opposing_pawn = color == COLOR_WHITE
+        ? PIECE_BLACK_PAWN
+        : PIECE_WHITE_PAWN;
+    int count = 0;
+
+    row += row_step;
+    while (row >= 0 && row < BOARD_SIZE) {
+        int file_start = include_adjacent_files ? column - 1 : column;
+        int file_end = include_adjacent_files ? column + 1 : column;
+        int file;
+
+        for (file = file_start; file <= file_end; ++file) {
+            if (file >= 0 && file < BOARD_SIZE &&
+                position_piece_at_coordinates(position, row, file) ==
+                    opposing_pawn) {
+                count++;
+            }
+        }
+
+        row += row_step;
+    }
+
+    return count;
+}
+
+static int pawn_is_backward(const Position *position, int square, Color color) {
+    int row = square_row(square);
+    int column = square_column(square);
+    int front_row = color == COLOR_WHITE ? row - 1 : row + 1;
+    int front_square;
+
+    if (pawn_is_passed(position, square, color) ||
+        pawn_has_adjacent_helper(position, square, color) ||
+        front_row < 0 || front_row >= BOARD_SIZE) {
+        return 0;
+    }
+
+    front_square = make_square(front_row, column);
+    return pawn_controls_square(position, opposite_color(color), front_square);
+}
+
+static int pawn_is_candidate_passed(
+    const Position *position,
+    int square,
+    Color color
+) {
+    if (pawn_is_passed(position, square, color) ||
+        pawn_is_backward(position, square, color)) {
+        return 0;
+    }
+
+    return count_opposing_pawns_ahead(position, square, color, 0) == 0 &&
+           count_opposing_pawns_ahead(position, square, color, 1) <= 1 &&
+           pawn_has_adjacent_helper(position, square, color);
+}
+
+static int pawn_island_count(const Position *position, Color color) {
+    int islands = 0;
+    int in_island = 0;
+    int column;
+
+    for (column = 0; column < BOARD_SIZE; ++column) {
+        if (count_pawns_on_file(position, color, column) > 0) {
+            if (!in_island) {
+                islands++;
+                in_island = 1;
+            }
+        } else {
+            in_island = 0;
+        }
+    }
+
+    return islands;
+}
+
 static int side_pawn_structure_score(const Position *position, Color color) {
     int score = 0;
     int column;
     int square;
     Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
+    int islands = pawn_island_count(position, color);
+
+    if (islands > 1) {
+        score -= (islands - 1) * PAWN_ISLAND_PENALTY;
+    }
 
     for (column = 0; column < BOARD_SIZE; ++column) {
         int count = count_pawns_on_file(position, color, column);
@@ -166,6 +384,7 @@ static int side_pawn_structure_score(const Position *position, Color color) {
                 : square_row(square) - 1;
 
             score += passed_pawn_bonus(square, color);
+            score += passed_pawn_king_distance_bonus(position, square, color);
             if (pawn_is_supported(position, square, color)) {
                 score += SUPPORTED_PASSED_PAWN_BONUS + advancement * 2;
             }
@@ -175,6 +394,16 @@ static int side_pawn_structure_score(const Position *position, Color color) {
             if (pawn_is_blocked(position, square, color)) {
                 score -= BLOCKED_PASSED_PAWN_PENALTY + advancement * 2;
             }
+        } else if (pawn_is_candidate_passed(position, square, color)) {
+            int advancement = color == COLOR_WHITE
+                ? 6 - square_row(square)
+                : square_row(square) - 1;
+
+            score += CANDIDATE_PASSED_PAWN_BONUS + advancement * 3;
+        }
+
+        if (pawn_is_backward(position, square, color)) {
+            score -= BACKWARD_PAWN_PENALTY;
         }
     }
 

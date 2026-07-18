@@ -93,6 +93,12 @@ static void test_pawn_structure(void) {
     Position supported_passer;
     Position connected_passers;
     Position separate_passers;
+    Position one_pawn_island;
+    Position two_pawn_islands;
+    Position backward_pawn;
+    Position supported_candidate;
+    Position far_enemy_king_passer;
+    Position close_enemy_king_passer;
 
     clear_position(&doubled_pawns);
     position_set_piece(&doubled_pawns, make_square(6, 3), PIECE_WHITE_PAWN);
@@ -163,6 +169,78 @@ static void test_pawn_structure(void) {
 
     assert(pawn_structure_score(&connected_passers) >
            pawn_structure_score(&separate_passers));
+
+    clear_position(&one_pawn_island);
+    position_set_piece(&one_pawn_island, make_square(6, 0), PIECE_WHITE_PAWN);
+    position_set_piece(&one_pawn_island, make_square(6, 1), PIECE_WHITE_PAWN);
+
+    clear_position(&two_pawn_islands);
+    position_set_piece(&two_pawn_islands, make_square(6, 0), PIECE_WHITE_PAWN);
+    position_set_piece(&two_pawn_islands, make_square(6, 3), PIECE_WHITE_PAWN);
+
+    assert(pawn_structure_score(&one_pawn_island) >
+           pawn_structure_score(&two_pawn_islands));
+
+    clear_position(&backward_pawn);
+    position_set_piece(&backward_pawn, make_square(4, 3), PIECE_WHITE_PAWN);
+    position_set_piece(&backward_pawn, make_square(2, 2), PIECE_BLACK_PAWN);
+
+    clear_position(&supported_candidate);
+    position_set_piece(
+        &supported_candidate,
+        make_square(4, 3),
+        PIECE_WHITE_PAWN
+    );
+    position_set_piece(
+        &supported_candidate,
+        make_square(5, 2),
+        PIECE_WHITE_PAWN
+    );
+    position_set_piece(
+        &supported_candidate,
+        make_square(2, 2),
+        PIECE_BLACK_PAWN
+    );
+
+    assert(pawn_structure_score(&supported_candidate) >
+           pawn_structure_score(&backward_pawn));
+
+    clear_position(&far_enemy_king_passer);
+    position_set_piece(
+        &far_enemy_king_passer,
+        make_square(2, 3),
+        PIECE_WHITE_PAWN
+    );
+    position_set_piece(
+        &far_enemy_king_passer,
+        make_square(3, 3),
+        PIECE_WHITE_KING
+    );
+    position_set_piece(
+        &far_enemy_king_passer,
+        make_square(0, 7),
+        PIECE_BLACK_KING
+    );
+
+    clear_position(&close_enemy_king_passer);
+    position_set_piece(
+        &close_enemy_king_passer,
+        make_square(2, 3),
+        PIECE_WHITE_PAWN
+    );
+    position_set_piece(
+        &close_enemy_king_passer,
+        make_square(3, 3),
+        PIECE_WHITE_KING
+    );
+    position_set_piece(
+        &close_enemy_king_passer,
+        make_square(0, 3),
+        PIECE_BLACK_KING
+    );
+
+    assert(pawn_structure_score(&far_enemy_king_passer) >
+           pawn_structure_score(&close_enemy_king_passer));
 }
 
 static void test_king_safety(void) {
@@ -187,6 +265,12 @@ static void test_piece_activity(void) {
     Position single_bishop;
     Position open_file_rook;
     Position blocked_rook;
+    Position seventh_rank_rook;
+    Position middle_rank_rook;
+    Position knight_outpost;
+    Position ordinary_knight;
+    Position good_bishop;
+    Position bad_bishop;
 
     clear_position(&bishop_pair);
     position_set_piece(&bishop_pair, make_square(7, 2), PIECE_WHITE_BISHOP);
@@ -207,6 +291,46 @@ static void test_piece_activity(void) {
 
     assert(piece_activity_score(&open_file_rook) >
            piece_activity_score(&blocked_rook));
+
+    clear_position(&seventh_rank_rook);
+    position_set_piece(
+        &seventh_rank_rook,
+        make_square(1, 3),
+        PIECE_WHITE_ROOK
+    );
+
+    clear_position(&middle_rank_rook);
+    position_set_piece(
+        &middle_rank_rook,
+        make_square(4, 3),
+        PIECE_WHITE_ROOK
+    );
+
+    assert(piece_activity_score(&seventh_rank_rook) >
+           piece_activity_score(&middle_rank_rook));
+
+    clear_position(&knight_outpost);
+    position_set_piece(&knight_outpost, make_square(3, 3), PIECE_WHITE_KNIGHT);
+    position_set_piece(&knight_outpost, make_square(4, 2), PIECE_WHITE_PAWN);
+
+    clear_position(&ordinary_knight);
+    position_set_piece(&ordinary_knight, make_square(3, 3), PIECE_WHITE_KNIGHT);
+
+    assert(piece_activity_score(&knight_outpost) >
+           piece_activity_score(&ordinary_knight));
+
+    clear_position(&good_bishop);
+    position_set_piece(&good_bishop, make_square(7, 2), PIECE_WHITE_BISHOP);
+
+    clear_position(&bad_bishop);
+    position_set_piece(&bad_bishop, make_square(7, 2), PIECE_WHITE_BISHOP);
+    position_set_piece(&bad_bishop, make_square(6, 1), PIECE_WHITE_PAWN);
+    position_set_piece(&bad_bishop, make_square(6, 3), PIECE_WHITE_PAWN);
+    position_set_piece(&bad_bishop, make_square(5, 4), PIECE_WHITE_PAWN);
+    position_set_piece(&bad_bishop, make_square(4, 5), PIECE_WHITE_PAWN);
+
+    assert(piece_activity_score(&good_bishop) >
+           piece_activity_score(&bad_bishop));
 }
 
 int main(void) {
