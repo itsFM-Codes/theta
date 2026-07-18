@@ -17,6 +17,11 @@ typedef struct BenchSearchResult {
     SearchStatistics statistics;
 } BenchSearchResult;
 
+typedef struct TacticalCase {
+    const char *fen;
+    const char *expected_move;
+} TacticalCase;
+
 static char promotion_character(Piece piece) {
     switch (piece_type(piece)) {
         case PIECE_TYPE_QUEEN:
@@ -150,6 +155,70 @@ static int run_benchmark(void) {
     return 1;
 }
 
+static int run_tactical_suite(void) {
+    static const TacticalCase cases[] = {
+        {
+            "3r3k/8/8/8/8/8/8/K2Q4 w - - 0 1",
+            "d1d8"
+        },
+        {
+            "6k1/5ppp/8/8/8/8/6PP/3Q2K1 w - - 0 1",
+            "d1d8"
+        }
+    };
+    int passed = 0;
+    char actual_moves[sizeof(cases) / sizeof(cases[0])][6];
+    int results[sizeof(cases) / sizeof(cases[0])];
+    int index;
+
+    for (index = 0; index < (int)(sizeof(cases) / sizeof(cases[0])); ++index) {
+        Position position;
+        Move best_move;
+        PrincipalVariation variation;
+        int completed_depth;
+        char move[6];
+        int correct = 0;
+
+        if (position_from_fen(&position, cases[index].fen)) {
+            search_iterative(
+                &position,
+                2,
+                0,
+                &best_move,
+                &variation,
+                &completed_depth
+            );
+            move_to_uci(best_move, move);
+            correct = strcmp(move, cases[index].expected_move) == 0;
+        } else {
+            strcpy(move, "0000");
+        }
+
+        if (correct) {
+            passed++;
+        }
+        strcpy(actual_moves[index], move);
+        results[index] = correct;
+    }
+
+    printf("{\"passed\":%d,\"total\":%d,\"cases\":[", passed,
+           (int)(sizeof(cases) / sizeof(cases[0])));
+    for (index = 0; index < (int)(sizeof(cases) / sizeof(cases[0])); ++index) {
+        if (index > 0) {
+            printf(",");
+        }
+        printf(
+            "{\"id\":%d,\"expected\":\"%s\",\"actual\":\"%s\",\"passed\":%s}",
+            index + 1,
+            cases[index].expected_move,
+            actual_moves[index],
+            results[index] ? "true" : "false"
+        );
+    }
+    printf("]}\n");
+    return passed == (int)(sizeof(cases) / sizeof(cases[0]));
+}
+
 static int print_legal_moves(const char *fen) {
     Position position;
     MoveList moves;
@@ -279,6 +348,10 @@ int main(int argc, char **argv) {
 
     if (argc == 2 && strcmp(argv[1], "bench") == 0) {
         return run_benchmark() ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (argc == 2 && strcmp(argv[1], "tactics") == 0) {
+        return run_tactical_suite() ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
     if (argc == 3 && strcmp(argv[1], "moves") == 0) {

@@ -474,10 +474,11 @@ int search_position(Position *position, int depth, Move *best_move) {
     return score;
 }
 
-int search_iterative_with_callback(
+int search_iterative_with_callback_and_node_limit(
     Position *position,
     int maximum_depth,
     int time_limit_ms,
+    uint64_t node_limit,
     Move *best_move,
     PrincipalVariation *variation,
     int *completed_depth,
@@ -513,7 +514,17 @@ int search_iterative_with_callback(
     }
 
     initialize_search_context(&context, time_limit_ms);
+    search_set_node_limit(&context, node_limit);
     search_push_position(&context, position);
+
+    if (best_move != 0) {
+        MoveList legal_moves;
+
+        generate_legal_moves(position, &legal_moves);
+        if (legal_moves.count > 0) {
+            *best_move = legal_moves.moves[0];
+        }
+    }
 
     completed_score = evaluate_position(position);
 
@@ -587,6 +598,29 @@ int search_iterative_with_callback(
 
     destroy_search_context(&context);
     return completed_score;
+}
+
+int search_iterative_with_callback(
+    Position *position,
+    int maximum_depth,
+    int time_limit_ms,
+    Move *best_move,
+    PrincipalVariation *variation,
+    int *completed_depth,
+    SearchInfoCallback callback,
+    void *user_data
+) {
+    return search_iterative_with_callback_and_node_limit(
+        position,
+        maximum_depth,
+        time_limit_ms,
+        0,
+        best_move,
+        variation,
+        completed_depth,
+        callback,
+        user_data
+    );
 }
 
 int search_iterative(

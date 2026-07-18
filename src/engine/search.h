@@ -52,5 +52,16 @@ int search_iterative_with_callback(
     SearchInfoCallback callback,
     void *user_data
 );
+int search_iterative_with_callback_and_node_limit(
+    Position *position,
+    int maximum_depth,
+    int time_limit_ms,
+    uint64_t node_limit,
+    Move *best_move,
+    PrincipalVariation *variation,
+    int *completed_depth,
+    SearchInfoCallback callback,
+    void *user_data
+);
 
 #endif // SEARCH_H

@@ -19,6 +19,7 @@ void initialize_search_context(SearchContext *context, int time_limit_ms) {
     context->time_limit_ms = time_limit_ms;
     context->stopped = 0;
     context->nodes = 0;
+    context->node_limit = 0;
     context->quiescence_nodes = 0;
     context->selective_depth = 0;
     context->position_key_count = 0;
@@ -40,12 +41,16 @@ void destroy_search_context(SearchContext *context) {
 int search_has_stopped(SearchContext *context) {
     int elapsed;
 
-    if (context == 0 || context->time_limit_ms <= 0) {
+    if (context == 0) {
         return 0;
     }
 
     if (context->stopped) {
         return 1;
+    }
+
+    if (context->time_limit_ms <= 0) {
+        return 0;
     }
 
     elapsed = search_elapsed_ms(context);
@@ -74,11 +79,20 @@ void search_record_node(SearchContext *context, int ply, int is_quiescence) {
     }
 
     context->nodes++;
+    if (context->node_limit > 0 && context->nodes > context->node_limit) {
+        context->stopped = 1;
+    }
     if (is_quiescence) {
         context->quiescence_nodes++;
     }
     if (ply > context->selective_depth) {
         context->selective_depth = ply;
+    }
+}
+
+void search_set_node_limit(SearchContext *context, uint64_t node_limit) {
+    if (context != 0) {
+        context->node_limit = node_limit;
     }
 }
 

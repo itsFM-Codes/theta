@@ -14,6 +14,7 @@ typedef struct SearchContext {
     int time_limit_ms;
     int stopped;
     uint64_t nodes;
+    uint64_t node_limit;
     uint64_t quiescence_nodes;
     int selective_depth;
     Move killer_moves[MAX_KILLER_PLY][2];
@@ -28,6 +29,7 @@ void destroy_search_context(SearchContext *context);
 int search_has_stopped(SearchContext *context);
 int search_elapsed_ms(const SearchContext *context);
 void search_record_node(SearchContext *context, int ply, int is_quiescence);
+void search_set_node_limit(SearchContext *context, uint64_t node_limit);
 void search_get_statistics(
     const SearchContext *context,
     SearchStatistics *statistics

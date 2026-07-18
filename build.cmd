@@ -140,6 +140,7 @@ echo [BUILD] search_test
     tests\search_test.cpp ^
     src\chess\board.cpp ^
     src\chess\position.cpp ^
+    src\chess\fen.cpp ^
     src\chess\move.cpp ^
     src\chess\movegen.cpp ^
     src\chess\zobrist.cpp ^

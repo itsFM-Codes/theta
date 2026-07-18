@@ -1,6 +1,7 @@
 #include <assert.h>
 
 #include "src/chess/board.h"
+#include "src/chess/fen.h"
 #include "src/chess/movegen.h"
 #include "src/chess/position.h"
 #include "src/engine/search.h"
@@ -219,6 +220,49 @@ static void test_search_reports_statistics(void) {
     assert(callback_statistics.elapsed_ms >= 0);
 }
 
+static void test_node_limited_search_returns_a_legal_move(void) {
+    Position position;
+    Move best_move;
+    UndoState undo;
+    PrincipalVariation variation;
+    int completed_depth;
+
+    set_starting_position(&position);
+    search_iterative_with_callback_and_node_limit(
+        &position,
+        20,
+        0,
+        1,
+        &best_move,
+        &variation,
+        &completed_depth,
+        0,
+        0
+    );
+
+    assert(make_move(&position, best_move, &undo));
+    undo_move(&position, best_move, &undo);
+}
+
+static void test_tactical_positions(void) {
+    static const char *positions[] = {
+        "3r3k/8/8/8/8/8/8/K2Q4 w - - 0 1",
+        "6k1/5ppp/8/8/8/8/6PP/3Q2K1 w - - 0 1"
+    };
+    int index;
+
+    for (index = 0; index < (int)(sizeof(positions) / sizeof(positions[0]));
+         ++index) {
+        Position position;
+        Move best_move;
+
+        assert(position_from_fen(&position, positions[index]));
+        search_position(&position, 2, &best_move);
+        assert(best_move.from == make_square(7, 3));
+        assert(best_move.to == make_square(0, 3));
+    }
+}
+
 int main(void) {
     test_zero_depth_evaluates_position();
     test_search_captures_hanging_rook();
@@ -232,5 +276,7 @@ int main(void) {
     test_threefold_repetition_detection();
     test_insufficient_material_draw();
     test_search_reports_statistics();
+    test_node_limited_search_returns_a_legal_move();
+    test_tactical_positions();
     return 0;
 }

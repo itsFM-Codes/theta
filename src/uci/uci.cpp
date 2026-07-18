@@ -13,6 +13,7 @@
 
 #define UCI_LINE_SIZE 4096
 #define UCI_FEN_SIZE 256
+#define UCI_MOVE_OVERHEAD_MS 10
 
 static void print_uci_move(Move move) {
     char promotion = '\0';
@@ -265,6 +266,10 @@ static void search_from_command(Position *position, char *arguments) {
     int time_limit_ms = 0;
     int white_time = 0;
     int black_time = 0;
+    int white_increment = 0;
+    int black_increment = 0;
+    int moves_to_go = 0;
+    uint64_t node_limit = 0;
     int value;
 
     while ((token = next_token(&cursor)) != 0) {
@@ -286,10 +291,20 @@ static void search_from_command(Position *position, char *arguments) {
         } else if (strcmp(token, "btime") == 0) {
             token = next_token(&cursor);
             parse_non_negative(token, &black_time);
-        } else if (strcmp(token, "winc") == 0 ||
-                   strcmp(token, "binc") == 0 ||
-                   strcmp(token, "movestogo") == 0) {
-            next_token(&cursor);
+        } else if (strcmp(token, "winc") == 0) {
+            token = next_token(&cursor);
+            parse_non_negative(token, &white_increment);
+        } else if (strcmp(token, "binc") == 0) {
+            token = next_token(&cursor);
+            parse_non_negative(token, &black_increment);
+        } else if (strcmp(token, "movestogo") == 0) {
+            token = next_token(&cursor);
+            parse_non_negative(token, &moves_to_go);
+        } else if (strcmp(token, "nodes") == 0) {
+            token = next_token(&cursor);
+            if (parse_non_negative(token, &value)) {
+                node_limit = (uint64_t)value;
+            }
         }
     }
 
@@ -301,20 +316,30 @@ static void search_from_command(Position *position, char *arguments) {
         int remaining_time = position->side_to_move == COLOR_WHITE
             ? white_time
             : black_time;
+        int increment = position->side_to_move == COLOR_WHITE
+            ? white_increment
+            : black_increment;
 
         if (remaining_time > 0) {
-            time_limit_ms = remaining_time / 30;
+            int divisor = moves_to_go > 0 ? moves_to_go : 30;
+            int hard_limit = remaining_time - UCI_MOVE_OVERHEAD_MS;
+
+            time_limit_ms = remaining_time / divisor + increment / 2;
+            if (time_limit_ms > hard_limit) {
+                time_limit_ms = hard_limit;
+            }
 
             if (time_limit_ms < 10) {
-                time_limit_ms = 10;
+                time_limit_ms = hard_limit > 0 ? hard_limit : 1;
             }
         }
     }
 
-    search_iterative_with_callback(
+    search_iterative_with_callback_and_node_limit(
         position,
         depth,
         time_limit_ms,
+        node_limit,
         &best_move,
         &variation,
         &completed_depth,
