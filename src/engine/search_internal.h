@@ -26,6 +26,7 @@ typedef struct SearchContext {
     uint64_t razoring_prunes;
     uint64_t delta_prunes;
     uint64_t see_prunes;
+    uint64_t quiescence_check_moves;
     uint64_t late_move_reductions;
     uint64_t late_move_researches;
     uint64_t aspiration_failures;

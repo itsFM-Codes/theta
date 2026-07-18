@@ -29,7 +29,7 @@ are a good sign, but they are not proof of playing strength by themselves.
 | Position | Depth | Score | Best move | Nodes |
 | --- | ---: | ---: | --- | ---: |
 | 1 | 5 | 45 | b1c3 | 2,714 |
-| 2 | 5 | -395 | e2a6 | 6,902 |
-| 3 | 5 | 5 | b5b6 | 647 |
-| 4 | 5 | 0 | e2e8 | 3,674 |
-| **Total** | | | | **13,937** |
+| 2 | 5 | -395 | e2a6 | 6,920 |
+| 3 | 5 | 5 | b5b6 | 651 |
+| 4 | 5 | 0 | e2e8 | 3,980 |
+| **Total** | | | | **14,265** |

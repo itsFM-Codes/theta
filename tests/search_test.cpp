@@ -6,6 +6,7 @@
 #include "src/chess/position.h"
 #include "src/engine/search.h"
 #include "src/engine/search_internal.h"
+#include "src/engine/quiescence.h"
 #include "src/eval/evaluation.h"
 
 static SearchStatistics callback_statistics;
@@ -124,6 +125,32 @@ static void test_quiescence_keeps_starting_position_equal(void) {
 
     assert(score > -100);
     assert(score < 100);
+}
+
+static void test_quiescence_considers_quiet_checks(void) {
+    Position position;
+    SearchContext context;
+    int score;
+
+    clear_position(&position);
+    position_set_piece(&position, make_square(7, 0), PIECE_WHITE_KING);
+    position_set_piece(&position, make_square(7, 3), PIECE_WHITE_QUEEN);
+    position_set_piece(&position, make_square(0, 7), PIECE_BLACK_KING);
+    position.side_to_move = COLOR_WHITE;
+
+    initialize_search_context(&context, 0);
+    assert(search_push_position(&context, &position));
+    score = quiescence_search(
+        &position,
+        -SEARCH_INFINITY,
+        SEARCH_INFINITY,
+        0,
+        &context
+    );
+
+    assert(score > 0);
+    assert(context.quiescence_check_moves > 0);
+    destroy_search_context(&context);
 }
 
 static void test_search_returns_a_legal_move(void) {
@@ -294,6 +321,7 @@ int main(void) {
     test_iterative_search_reaches_requested_depth();
     test_quiescence_sees_a_recapture();
     test_quiescence_keeps_starting_position_equal();
+    test_quiescence_considers_quiet_checks();
     test_search_returns_a_legal_move();
     test_search_restores_material();
     test_fifty_move_draw();

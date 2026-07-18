@@ -33,6 +33,7 @@ void initialize_search_context(SearchContext *context, int time_limit_ms) {
     context->razoring_prunes = 0;
     context->delta_prunes = 0;
     context->see_prunes = 0;
+    context->quiescence_check_moves = 0;
     context->late_move_reductions = 0;
     context->late_move_researches = 0;
     context->aspiration_failures = 0;
@@ -162,6 +163,9 @@ void search_get_statistics(
     statistics->razoring_prunes = context == 0 ? 0 : context->razoring_prunes;
     statistics->delta_prunes = context == 0 ? 0 : context->delta_prunes;
     statistics->see_prunes = context == 0 ? 0 : context->see_prunes;
+    statistics->quiescence_check_moves = context == 0
+        ? 0
+        : context->quiescence_check_moves;
     statistics->late_move_reductions = context == 0
         ? 0
         : context->late_move_reductions;

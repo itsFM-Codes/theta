@@ -28,6 +28,9 @@ const settingsButton = document.querySelector('#engine-settings');
 const settingsElement = document.querySelector('#search-settings');
 const searchTimeInput = document.querySelector('#search-time');
 const searchDepthInput = document.querySelector('#search-depth');
+const searchStatusElement = document.querySelector('#search-status');
+const depthElement = document.querySelector('#depth');
+const searchStatsElement = document.querySelector('#search-stats');
 
 let board = createStartingPosition();
 let currentMode = 'play';
@@ -53,6 +56,15 @@ let evaluationRequestNumber = 0;
 let searchAbortController = null;
 let analysisDepth = searchDepth;
 let principalVariation = [];
+let searchStatus = 'Idle';
+let searchError = '';
+let searchStats = {
+  selectiveDepth: 0,
+  nodes: 0,
+  nps: 0,
+  timeMs: 0,
+  hashfull: 0
+};
 
 function createStartingPosition() {
   return STARTING_POSITION.map(row => [...row]);
@@ -442,6 +454,9 @@ async function requestSearch() {
   }
 
   searchAbortController = new AbortController();
+  searchStatus = 'Searching';
+  searchError = '';
+  refreshAnalysis();
 
   try {
     const response = await fetch('/api/search-stream', {
@@ -495,6 +510,14 @@ async function requestSearch() {
         }
 
         if (requestNumber === evaluationRequestNumber) {
+          searchStatus = 'Searching';
+          searchStats = {
+            selectiveDepth: update.selectiveDepth || update.depth,
+            nodes: update.nodes || 0,
+            nps: update.nps || 0,
+            timeMs: update.timeMs || 0,
+            hashfull: update.hashfull || 0
+          };
           updateEvaluation(update.evaluation, formatSearchScore(update));
           analysisDepth = update.depth;
           principalVariation = update.pv.map(uciMoveToMove);
@@ -502,8 +525,23 @@ async function requestSearch() {
         }
       }
     }
+
+    if (requestNumber === evaluationRequestNumber) {
+      searchStatus = 'Ready';
+      refreshAnalysis();
+    }
   } catch (error) {
-    if (error.name !== 'AbortError') {
+    if (error.name === 'AbortError') {
+      if (requestNumber === evaluationRequestNumber) {
+        searchStatus = 'Cancelled';
+        refreshAnalysis();
+      }
+    } else {
+      if (requestNumber === evaluationRequestNumber) {
+        searchStatus = 'Error';
+        searchError = error.message;
+        refreshAnalysis();
+      }
       console.error(error);
     }
   }
@@ -775,6 +813,34 @@ function formatSearchScore(update) {
   return formatEvaluation(update.evaluation / 100);
 }
 
+function formatCompactNumber(value) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return '0';
+  }
+
+  if (value >= 1000000) {
+    return `${(value / 1000000).toFixed(1)}m`;
+  }
+
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)}k`;
+  }
+
+  return String(Math.round(value));
+}
+
+function formatSearchTime(milliseconds) {
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) {
+    return '0ms';
+  }
+
+  if (milliseconds >= 1000) {
+    return `${(milliseconds / 1000).toFixed(1)}s`;
+  }
+
+  return `${Math.round(milliseconds)}ms`;
+}
+
 function updateEvaluation(
   evaluation,
   labelText = formatEvaluation(evaluation / 100)
@@ -885,7 +951,18 @@ function formatPrincipalVariation() {
 }
 
 function refreshAnalysis() {
-  document.querySelector('#depth').textContent = `Depth ${analysisDepth}`;
+  const selectiveDepth = searchStats.selectiveDepth || analysisDepth;
+
+  searchStatusElement.textContent = searchStatus;
+  depthElement.textContent = selectiveDepth > analysisDepth
+    ? `Depth ${analysisDepth} / Sel ${selectiveDepth}`
+    : `Depth ${analysisDepth}`;
+  searchStatsElement.textContent = searchError || [
+    `${formatCompactNumber(searchStats.nodes)} nodes`,
+    `${formatCompactNumber(searchStats.nps)}/s`,
+    formatSearchTime(searchStats.timeMs),
+    `hash ${searchStats.hashfull}`
+  ].join(' · ');
 
   if (principalVariation.length === 0) {
     linesElement.innerHTML = '';
@@ -982,7 +1059,7 @@ for (const button of modeButtons) {
 
 document.querySelector('#flip').addEventListener('click', () => {
   isFlipped = !isFlipped;
-  updateEvaluation(materialEvaluation);
+  updateEvaluation(materialEvaluation, evaluationText);
   renderBoard();
 });
 

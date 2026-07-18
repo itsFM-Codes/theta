@@ -7,6 +7,7 @@
 #include "src/eval/evaluation.h"
 
 #define DELTA_MARGIN 200
+#define QUIESCENCE_CHECK_PLY_LIMIT 2
 
 static int piece_value(Piece piece) {
     switch (piece_type(piece)) {
@@ -31,6 +32,19 @@ static int capture_value(const Position *position, Move move) {
     }
 
     return piece_value(position_piece_at(position, move.to));
+}
+
+static int move_gives_check(Position *position, Move move) {
+    UndoState undo;
+    int gives_check;
+
+    if (!make_move(position, move, &undo)) {
+        return 0;
+    }
+
+    gives_check = position_is_in_check(position);
+    undo_move(position, move, &undo);
+    return gives_check;
 }
 
 int quiescence_search(
@@ -87,17 +101,27 @@ int quiescence_search(
     for (index = 0; index < moves.count; ++index) {
         Move move = moves.moves[index];
         UndoState undo;
+        int tactical_move =
+            (move.flags & (MOVE_FLAG_CAPTURE | MOVE_FLAG_PROMOTION)) != 0;
         int score;
 
         if (search_has_stopped(context)) {
             return 0;
         }
 
-        if (!in_check && (move.flags & MOVE_FLAG_CAPTURE) == 0) {
-            continue;
+        if (!in_check && !tactical_move) {
+            if (ply > QUIESCENCE_CHECK_PLY_LIMIT ||
+                !move_gives_check(position, move)) {
+                continue;
+            }
+
+            if (context != 0) {
+                context->quiescence_check_moves++;
+            }
         }
 
-        if (!in_check && (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
+        if (!in_check && tactical_move &&
+            (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
             stand_pat + capture_value(position, move) + DELTA_MARGIN < alpha) {
             if (context != 0) {
                 context->delta_prunes++;
@@ -105,7 +129,8 @@ int quiescence_search(
             continue;
         }
 
-        if (!in_check && (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
+        if (!in_check && tactical_move &&
+            (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
             static_exchange_evaluation(position, move) < 0) {
             if (context != 0) {
                 context->see_prunes++;

@@ -81,15 +81,43 @@ int probe_transposition_table(
     return 0;
 }
 
-void store_transposition_table(
+int probe_transposition_static_evaluation(
+    const TranspositionTable *table,
+    uint64_t key,
+    int *static_evaluation
+) {
+    const TranspositionEntry *entry;
+
+    if (table == 0 || table->entries == 0 || table->count == 0) {
+        return 0;
+    }
+
+    entry = &table->entries[key % (uint64_t)table->count];
+    if (!entry->is_valid || entry->key != key ||
+        !entry->has_static_evaluation) {
+        return 0;
+    }
+
+    if (static_evaluation != 0) {
+        *static_evaluation = entry->static_evaluation;
+    }
+
+    return 1;
+}
+
+static void store_transposition_table_with_optional_static_evaluation(
     TranspositionTable *table,
     uint64_t key,
     int depth,
     int score,
     TranspositionFlag flag,
-    Move best_move
+    Move best_move,
+    int has_static_evaluation,
+    int static_evaluation
 ) {
     TranspositionEntry *entry;
+    int preserve_static_evaluation = 0;
+    int preserved_static_evaluation = 0;
 
     if (table == 0 || table->entries == 0 || table->count == 0) {
         return;
@@ -98,16 +126,72 @@ void store_transposition_table(
     entry = &table->entries[key % (uint64_t)table->count];
 
     if (entry->is_valid && entry->key == key && entry->depth > depth) {
+        if (has_static_evaluation && !entry->has_static_evaluation) {
+            entry->static_evaluation = static_evaluation;
+            entry->has_static_evaluation = 1;
+        }
         return;
+    }
+
+    if (entry->is_valid && entry->key == key &&
+        entry->has_static_evaluation && !has_static_evaluation) {
+        preserve_static_evaluation = 1;
+        preserved_static_evaluation = entry->static_evaluation;
     }
 
     entry->key = key;
     entry->best_move = best_move;
     entry->score = score;
+    entry->static_evaluation = has_static_evaluation
+        ? static_evaluation
+        : preserved_static_evaluation;
     entry->depth = depth;
     entry->flag = flag;
     entry->is_valid = 1;
+    entry->has_static_evaluation =
+        has_static_evaluation || preserve_static_evaluation;
     table->stores++;
+}
+
+void store_transposition_table(
+    TranspositionTable *table,
+    uint64_t key,
+    int depth,
+    int score,
+    TranspositionFlag flag,
+    Move best_move
+) {
+    store_transposition_table_with_optional_static_evaluation(
+        table,
+        key,
+        depth,
+        score,
+        flag,
+        best_move,
+        0,
+        0
+    );
+}
+
+void store_transposition_table_with_static_evaluation(
+    TranspositionTable *table,
+    uint64_t key,
+    int depth,
+    int score,
+    TranspositionFlag flag,
+    Move best_move,
+    int static_evaluation
+) {
+    store_transposition_table_with_optional_static_evaluation(
+        table,
+        key,
+        depth,
+        score,
+        flag,
+        best_move,
+        1,
+        static_evaluation
+    );
 }
 
 int transposition_table_hashfull(const TranspositionTable *table) {

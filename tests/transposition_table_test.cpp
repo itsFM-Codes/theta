@@ -99,9 +99,87 @@ static void test_bound_table_entry(void) {
     destroy_transposition_table(&table);
 }
 
+static void test_table_move_survives_unusable_score(void) {
+    TranspositionTable table;
+    Move move = make_test_move();
+    Move stored_move;
+    int score = 0;
+
+    initialize_transposition_table(&table);
+    store_transposition_table(
+        &table,
+        UINT64_C(13579),
+        1,
+        25,
+        TRANSPOSITION_EXACT,
+        move
+    );
+
+    assert(!probe_transposition_table(
+        &table,
+        UINT64_C(13579),
+        4,
+        -100,
+        100,
+        &score,
+        &stored_move
+    ));
+    assert(stored_move.from == move.from);
+    assert(stored_move.to == move.to);
+    assert(table.probes == 1);
+    assert(table.key_hits == 1);
+    assert(table.score_cutoffs == 0);
+
+    destroy_transposition_table(&table);
+}
+
+static void test_static_evaluation_entry(void) {
+    TranspositionTable table;
+    Move move = make_test_move();
+    int static_evaluation = 0;
+
+    initialize_transposition_table(&table);
+    store_transposition_table_with_static_evaluation(
+        &table,
+        UINT64_C(24680),
+        3,
+        10,
+        TRANSPOSITION_EXACT,
+        move,
+        123
+    );
+
+    assert(probe_transposition_static_evaluation(
+        &table,
+        UINT64_C(24680),
+        &static_evaluation
+    ));
+    assert(static_evaluation == 123);
+
+    store_transposition_table(
+        &table,
+        UINT64_C(24680),
+        4,
+        12,
+        TRANSPOSITION_EXACT,
+        move
+    );
+    static_evaluation = 0;
+    assert(probe_transposition_static_evaluation(
+        &table,
+        UINT64_C(24680),
+        &static_evaluation
+    ));
+    assert(static_evaluation == 123);
+
+    destroy_transposition_table(&table);
+}
+
 int main(void) {
     test_position_key_restores_after_undo();
     test_exact_table_entry();
     test_bound_table_entry();
+    test_table_move_survives_unusable_score();
+    test_static_evaluation_entry();
     return 0;
 }

@@ -161,7 +161,23 @@ static int search_static_evaluation(
     SearchContext *context,
     int ply
 ) {
-    int score = evaluate_position(position);
+    int score;
+
+    if (context != 0 &&
+        probe_transposition_static_evaluation(
+            &context->table,
+            position_key(position),
+            &score
+        )) {
+        if (ply >= 0 && ply < MAX_SEARCH_PLY) {
+            context->static_evaluations[ply] = score;
+            context->static_evaluation_valid[ply] = 1;
+        }
+
+        return score;
+    }
+
+    score = evaluate_position(position);
 
     if (context != 0 && ply >= 0 && ply < MAX_SEARCH_PLY) {
         context->static_evaluations[ply] = score;
@@ -600,13 +616,14 @@ skip_null_cutoff:
                 );
             }
             update_variation(variation, move, &child_variation);
-            store_transposition_table(
+            store_transposition_table_with_static_evaluation(
                 &context->table,
                 key,
                 depth,
                 score_to_table(beta, ply),
                 TRANSPOSITION_LOWER_BOUND,
-                move
+                move,
+                static_score
             );
             return beta;
         }
@@ -617,7 +634,7 @@ skip_null_cutoff:
         }
     }
 
-    store_transposition_table(
+    store_transposition_table_with_static_evaluation(
         &context->table,
         key,
         depth,
@@ -625,7 +642,8 @@ skip_null_cutoff:
         alpha <= original_alpha
             ? TRANSPOSITION_UPPER_BOUND
             : TRANSPOSITION_EXACT,
-        variation->count > 0 ? variation->moves[0] : table_move
+        variation->count > 0 ? variation->moves[0] : table_move,
+        static_score
     );
 
     return alpha;

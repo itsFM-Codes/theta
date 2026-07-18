@@ -251,6 +251,24 @@ button {
   font-size: 12px;
 }
 
+.engine-summary {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+#search-status {
+  color: #d5d2cc;
+  font-weight: 750;
+}
+
+#depth,
+#search-stats {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .engine-settings {
   display: grid;
   place-items: center;

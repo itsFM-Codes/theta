@@ -17,9 +17,11 @@ typedef struct TranspositionEntry {
     uint64_t key;
     Move best_move;
     int score;
+    int static_evaluation;
     int depth;
     int flag;
     int is_valid;
+    int has_static_evaluation;
 } TranspositionEntry;
 
 typedef struct TranspositionTable {
@@ -46,6 +48,12 @@ int probe_transposition_table(
 
 int transposition_table_hashfull(const TranspositionTable *table);
 
+int probe_transposition_static_evaluation(
+    const TranspositionTable *table,
+    uint64_t key,
+    int *static_evaluation
+);
+
 void store_transposition_table(
     TranspositionTable *table,
     uint64_t key,
@@ -53,6 +61,16 @@ void store_transposition_table(
     int score,
     TranspositionFlag flag,
     Move best_move
+);
+
+void store_transposition_table_with_static_evaluation(
+    TranspositionTable *table,
+    uint64_t key,
+    int depth,
+    int score,
+    TranspositionFlag flag,
+    Move best_move,
+    int static_evaluation
 );
 
 #endif // TRANSPOSITION_TABLE_H
