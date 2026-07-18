@@ -1,2 +1,6 @@
 build/
 .vscode/
+
+# Local engine downloads and generated Cute Chess match artifacts.
+test/stockfish-*.exe
+test/results/
