@@ -39,3 +39,5 @@ The node count was reproduced in consecutive release runs, the tactical suite
 passed 2/2, and the new engine scored 28 wins, 23 losses, and 5 draws against
 the preserved pre-change engine across paired matches at `2+0.02` and
 `1+0.01`.
+
+Elo (based on cutechess with stockfish-18): 1445

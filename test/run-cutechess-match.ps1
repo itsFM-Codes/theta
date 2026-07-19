@@ -3,7 +3,8 @@ param(
     [string]$TimeControl = "2+0.02",
     [int]$StockfishElo = 1320,
     [int]$Concurrency = 1,
-    [int]$HashMb = 16
+    [int]$HashMb = 16,
+    [int]$TimeMarginMs = 250
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,7 +39,7 @@ $arguments = @(
     "-engine", "name=Stockfish18-Limited", "cmd=$stockfish", "dir=$root", "proto=uci",
         "restart=off", "option.Threads=1", "option.Hash=$HashMb",
         "option.UCI_LimitStrength=true", "option.UCI_Elo=$StockfishElo",
-    "-each", "tc=$TimeControl", "timemargin=250",
+    "-each", "tc=$TimeControl", "timemargin=$TimeMarginMs",
     "-openings", "file=$openings", "format=epd", "order=sequential",
     "-games", "$Games", "-rounds", "1", "-repeat",
     "-concurrency", "$Concurrency",
@@ -49,7 +50,7 @@ $arguments = @(
 )
 
 "Cute Chess: $cutechess" | Tee-Object -FilePath $log
-"Settings: games=$Games tc=$TimeControl concurrency=$Concurrency hash=${HashMb}MB stockfishElo=$StockfishElo" |
+"Settings: games=$Games tc=$TimeControl concurrency=$Concurrency hash=${HashMb}MB stockfishElo=$StockfishElo timemargin=${TimeMarginMs}ms" |
     Tee-Object -FilePath $log -Append
 & $cutechess @arguments 2>&1 | Tee-Object -FilePath $log -Append
 if ($LASTEXITCODE -ne 0) {
