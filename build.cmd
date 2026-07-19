@@ -17,6 +17,18 @@ if errorlevel 1 (
 
 set "CXX=g++"
 set "CXXFLAGS=-std=c++17 -Wall -Wextra -Wpedantic -I."
+set "ENGINE_CXXFLAGS=%CXXFLAGS%"
+
+if /I "%~1"=="debug" (
+    rem Default flags already selected.
+) else if /I "%~1"=="release" (
+    set "ENGINE_CXXFLAGS=%CXXFLAGS% -O3 -DNDEBUG"
+) else if /I "%~1"=="native" (
+    set "ENGINE_CXXFLAGS=%CXXFLAGS% -O3 -DNDEBUG -march=native"
+) else if not "%~1"=="" (
+    echo [ERROR] Unknown build mode "%~1". Use debug, release, or native.
+    exit /b 1
+)
 
 echo [BUILD] position_test
 %CXX% %CXXFLAGS% ^
@@ -174,7 +186,7 @@ for /r "src" %%F in (*.cpp) do (
 )
 
 echo [BUILD] theta
-%CXX% %CXXFLAGS% main.cpp !ENGINE_SOURCES! -o build\theta.exe
+%CXX% %ENGINE_CXXFLAGS% main.cpp !ENGINE_SOURCES! -o build\theta.exe
 if errorlevel 1 exit /b 1
 
 echo [TEST]  uci_protocol_test

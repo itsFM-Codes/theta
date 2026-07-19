@@ -2,10 +2,27 @@
 #define TRANSPOSITION_TABLE_H
 
 #include <stdint.h>
+#ifdef _WIN32
+#include <windows.h>
+class TranspositionMutex {
+public:
+    TranspositionMutex() { InitializeCriticalSection(&section_); }
+    ~TranspositionMutex() { DeleteCriticalSection(&section_); }
+    void lock() { EnterCriticalSection(&section_); }
+    void unlock() { LeaveCriticalSection(&section_); }
+private:
+    CRITICAL_SECTION section_;
+};
+#else
+#include <mutex>
+typedef std::mutex TranspositionMutex;
+#endif
 
 #include "src/chess/move.h"
 
-#define TRANSPOSITION_TABLE_SIZE (1 << 18)
+#define DEFAULT_TRANSPOSITION_TABLE_MB 16
+#define TRANSPOSITION_CLUSTER_SIZE 4
+#define TRANSPOSITION_LOCK_COUNT 256
 
 typedef enum TranspositionFlag {
     TRANSPOSITION_EXACT,
@@ -22,11 +39,17 @@ typedef struct TranspositionEntry {
     int flag;
     int is_valid;
     int has_static_evaluation;
+    uint8_t generation;
 } TranspositionEntry;
 
 typedef struct TranspositionTable {
     TranspositionEntry *entries;
     int count;
+    int bucket_count;
+    int size_mb;
+    uint8_t generation;
+    TranspositionMutex *locks;
+    int lock_count;
 } TranspositionTable;
 
 typedef struct TranspositionTableStatistics {
@@ -37,8 +60,10 @@ typedef struct TranspositionTableStatistics {
 } TranspositionTableStatistics;
 
 void initialize_transposition_table(TranspositionTable *table);
+int initialize_transposition_table_mb(TranspositionTable *table, int size_mb);
 void clear_transposition_table(TranspositionTable *table);
 void destroy_transposition_table(TranspositionTable *table);
+void advance_transposition_table_generation(TranspositionTable *table);
 
 int probe_transposition_table(
     TranspositionTable *table,
@@ -57,6 +82,11 @@ int probe_transposition_static_evaluation(
     const TranspositionTable *table,
     uint64_t key,
     int *static_evaluation
+);
+int probe_transposition_entry(
+    const TranspositionTable *table,
+    uint64_t key,
+    TranspositionEntry *entry
 );
 
 void store_transposition_table(

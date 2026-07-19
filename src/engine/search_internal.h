@@ -36,11 +36,16 @@ typedef struct SearchContext {
     uint64_t late_move_researches;
     uint64_t aspiration_failures;
     uint64_t aspiration_researches;
+    uint64_t probcut_attempts;
+    uint64_t probcut_cutoffs;
+    uint64_t singular_attempts;
+    uint64_t singular_extensions;
     int selective_depth;
     Move killer_moves[MAX_KILLER_PLY][2];
     Move counter_moves[SQUARE_COUNT][SQUARE_COUNT];
     Move line_moves[MAX_SEARCH_PLY];
     int history[2][SQUARE_COUNT][SQUARE_COUNT];
+    int continuation_history[SQUARE_COUNT][SQUARE_COUNT];
     int capture_history[2][PIECE_TYPE_KING + 1][SQUARE_COUNT][PIECE_TYPE_KING + 1];
     int static_evaluations[MAX_SEARCH_PLY];
     int static_evaluation_valid[MAX_SEARCH_PLY];

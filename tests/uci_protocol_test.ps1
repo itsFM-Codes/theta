@@ -55,7 +55,15 @@ try {
     }
 
     Send-Command "uci"
-    $null = Read-Until { param($line) $line -eq "uciok" }
+    $uci = Read-Until { param($line) $line -eq "uciok" }
+    if (-not ($uci.Seen | Where-Object { $_ -like "option name Hash *" })) {
+        throw "UCI Hash option was not reported"
+    }
+    if (-not ($uci.Seen | Where-Object { $_ -eq "option name Clear Hash type button" })) {
+        throw "UCI Clear Hash option was not reported"
+    }
+    Send-Command "setoption name Hash value 4"
+    Send-Command "setoption name Clear Hash"
     Send-Command "isready"
     $null = Read-Until { param($line) $line -eq "readyok" }
 

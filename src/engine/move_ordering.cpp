@@ -92,13 +92,23 @@ static int killer_move_score(
 static int history_move_score(
     const SearchContext *context,
     Color color,
+    int ply,
     Move move
 ) {
+    int score;
+
     if (context == 0 || color == COLOR_NONE) {
         return 0;
     }
 
-    return context->history[color][move.from][move.to];
+    score = context->history[color][move.from][move.to];
+    if (ply > 0 && ply <= MAX_SEARCH_PLY) {
+        Move previous = context->line_moves[ply - 1];
+        if (is_valid_square(previous.to)) {
+            score += context->continuation_history[previous.to][move.to];
+        }
+    }
+    return score;
 }
 
 static int counter_move_score(
@@ -184,7 +194,9 @@ static int move_order_score(
             return reply_score;
         }
 
-        return history_move_score(context, position->side_to_move, move);
+        return history_move_score(
+            context, position->side_to_move, ply, move
+        );
     }
 
     attacker = position_piece_at(position, move.from);
@@ -218,15 +230,39 @@ void order_moves(
     int ply,
     const Move *table_move
 ) {
-    int index;
-    int scores[MAX_MOVES];
+    MovePicker picker;
+    Move move;
 
+    initialize_move_picker(
+        &picker, position, moves, order_checks, context, ply, table_move
+    );
+    while (move_picker_next(&picker, &move)) {
+    }
+}
+
+void initialize_move_picker(
+    MovePicker *picker,
+    Position *position,
+    MoveList *moves,
+    int order_checks,
+    const SearchContext *context,
+    int ply,
+    const Move *table_move
+) {
+    int index;
+
+    if (picker == 0) {
+        return;
+    }
+
+    picker->moves = moves;
+    picker->next_index = 0;
     if (position == 0 || moves == 0) {
         return;
     }
 
     for (index = 0; index < moves->count; ++index) {
-        scores[index] = move_order_score(
+        picker->scores[index] = move_order_score(
             position,
             moves->moves[index],
             order_checks,
@@ -236,26 +272,40 @@ void order_moves(
         );
     }
 
-    for (index = 0; index < moves->count; ++index) {
-        int best_index = index;
-        int next;
+}
 
-        for (next = index + 1; next < moves->count; ++next) {
-            if (scores[next] > scores[best_index]) {
-                best_index = next;
-            }
-        }
+int move_picker_next(MovePicker *picker, Move *move) {
+    int best_index;
+    int next;
 
-        if (best_index != index) {
-            Move move = moves->moves[index];
-            int score = scores[index];
+    if (picker == 0 || picker->moves == 0 || move == 0 ||
+        picker->next_index >= picker->moves->count) {
+        return 0;
+    }
 
-            moves->moves[index] = moves->moves[best_index];
-            moves->moves[best_index] = move;
-            scores[index] = scores[best_index];
-            scores[best_index] = score;
+    best_index = picker->next_index;
+    for (next = picker->next_index + 1;
+         next < picker->moves->count;
+         ++next) {
+        if (picker->scores[next] > picker->scores[best_index]) {
+            best_index = next;
         }
     }
+
+    if (best_index != picker->next_index) {
+        Move swapped_move = picker->moves->moves[picker->next_index];
+        int swapped_score = picker->scores[picker->next_index];
+
+        picker->moves->moves[picker->next_index] =
+            picker->moves->moves[best_index];
+        picker->moves->moves[best_index] = swapped_move;
+        picker->scores[picker->next_index] = picker->scores[best_index];
+        picker->scores[best_index] = swapped_score;
+    }
+
+    *move = picker->moves->moves[picker->next_index];
+    picker->next_index++;
+    return 1;
 }
 
 void record_quiet_cutoff(
@@ -294,6 +344,16 @@ void record_quiet_cutoff(
     bonus = depth * depth;
     history_score = &context->history[color][move.from][move.to];
     update_history_score(history_score, bonus);
+
+    if (ply > 0 && ply <= MAX_SEARCH_PLY) {
+        Move previous_move = context->line_moves[ply - 1];
+        if (is_valid_square(previous_move.to)) {
+            update_history_score(
+                &context->continuation_history[previous_move.to][move.to],
+                bonus
+            );
+        }
+    }
 }
 
 void record_quiet_failures(

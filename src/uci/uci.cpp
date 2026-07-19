@@ -524,6 +524,9 @@ int run_uci(void) {
             printf("id name Theta\n");
             printf("id author FM\n");
             printf("option name Threads type spin default 1 min 1 max 1\n");
+            printf("option name Hash type spin default %d min 1 max 1024\n",
+                   DEFAULT_TRANSPOSITION_TABLE_MB);
+            printf("option name Clear Hash type button\n");
             printf("uciok\n");
             fflush(stdout);
         } else if (strcmp(arguments, "isready") == 0) {
@@ -536,6 +539,19 @@ int run_uci(void) {
             set_starting_position(&position);
             position_history.clear();
             position_history.push_back(position_key(&position));
+        } else if (strncmp(arguments, "setoption name Hash value ", 26) == 0) {
+            int hash_mb;
+
+            stop_search();
+            if (parse_non_negative(arguments + 26, &hash_mb) &&
+                hash_mb >= 1 && hash_mb <= 1024) {
+                if (!resize_search_shared_state(&shared_state, hash_mb)) {
+                    fprintf(stderr, "Error: Could not resize hash table\n");
+                }
+            }
+        } else if (strcmp(arguments, "setoption name Clear Hash") == 0) {
+            stop_search();
+            clear_search_shared_state(&shared_state);
         } else if (strncmp(arguments, "position ", 9) == 0) {
             stop_search();
             set_position_from_command(
@@ -548,6 +564,9 @@ int run_uci(void) {
                     arguments[2] == '\t')) {
             stop_search();
             stop_requested.store(false, std::memory_order_relaxed);
+            advance_transposition_table_generation(
+                &shared_state.transposition_table
+            );
             UciSearchTask *task = new UciSearchTask;
             task->shared_state = &shared_state;
             task->position = position;

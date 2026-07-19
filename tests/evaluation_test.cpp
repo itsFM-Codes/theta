@@ -404,6 +404,38 @@ static void test_pawn_storm_and_king_pressure(void) {
            king_safety_score(&close_attack, 0));
 }
 
+static void test_evaluation_trace_matches_total(void) {
+    Position position;
+    EvaluationTrace trace = {};
+    int score;
+
+    set_starting_position(&position);
+    score = evaluate_position_with_trace(&position, &trace);
+    assert(score == evaluate_position(&position));
+    assert(trace.total == score);
+    assert(trace.total == trace.material_and_piece_square + trace.mobility +
+           trace.pawn_structure + trace.king_safety + trace.piece_activity +
+           trace.threats + trace.space);
+}
+
+static void test_pawn_hash_tracks_blockers(void) {
+    Position blocked;
+    Position unblocked;
+    int blocked_score;
+
+    clear_position(&blocked);
+    position_set_piece(&blocked, make_square(7, 0), PIECE_WHITE_KING);
+    position_set_piece(&blocked, make_square(0, 7), PIECE_BLACK_KING);
+    position_set_piece(&blocked, make_square(3, 3), PIECE_WHITE_PAWN);
+    position_set_piece(&blocked, make_square(2, 3), PIECE_BLACK_KNIGHT);
+    unblocked = blocked;
+    position_set_piece(&unblocked, make_square(2, 3), PIECE_NONE);
+
+    blocked_score = pawn_structure_score(&blocked);
+    assert(pawn_structure_score(&unblocked) > blocked_score);
+    assert(pawn_structure_score(&blocked) == blocked_score);
+}
+
 int main(void) {
     test_starting_position();
     test_side_to_move_score();
@@ -417,5 +449,7 @@ int main(void) {
     test_trapped_minor_piece();
     test_threats_and_space();
     test_pawn_storm_and_king_pressure();
+    test_evaluation_trace_matches_total();
+    test_pawn_hash_tracks_blockers();
     return 0;
 }

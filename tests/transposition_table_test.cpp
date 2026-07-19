@@ -187,11 +187,24 @@ static void test_static_evaluation_entry(void) {
     destroy_transposition_table(&table);
 }
 
+static void test_configurable_clustered_table(void) {
+    TranspositionTable table;
+
+    assert(initialize_transposition_table_mb(&table, 1));
+    assert(table.size_mb == 1);
+    assert(table.count >= TRANSPOSITION_CLUSTER_SIZE);
+    assert(table.count % TRANSPOSITION_CLUSTER_SIZE == 0);
+    assert(table.bucket_count == table.count / TRANSPOSITION_CLUSTER_SIZE);
+    assert(table.lock_count == TRANSPOSITION_LOCK_COUNT);
+    destroy_transposition_table(&table);
+}
+
 int main(void) {
     test_position_key_restores_after_undo();
     test_exact_table_entry();
     test_bound_table_entry();
     test_table_move_survives_unusable_score();
     test_static_evaluation_entry();
+    test_configurable_clustered_table();
     return 0;
 }

@@ -3,6 +3,23 @@
 
 #include "search_internal.h"
 
+typedef struct MovePicker {
+    MoveList *moves;
+    int scores[MAX_MOVES];
+    int next_index;
+} MovePicker;
+
+void initialize_move_picker(
+    MovePicker *picker,
+    Position *position,
+    MoveList *moves,
+    int order_checks,
+    const SearchContext *context,
+    int ply,
+    const Move *table_move
+);
+int move_picker_next(MovePicker *picker, Move *move);
+
 void order_moves(
     Position *position,
     MoveList *moves,

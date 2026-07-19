@@ -312,6 +312,32 @@ static int print_search_result(const char *fen, int depth, int time_limit_ms) {
     return 1;
 }
 
+static int print_evaluation_trace(const char *fen) {
+    Position position;
+    EvaluationTrace trace = {};
+
+    if (!position_from_fen(&position, fen)) {
+        fprintf(stderr, "Error: Invalid FEN\n");
+        return 0;
+    }
+
+    evaluate_position_with_trace(&position, &trace);
+    printf(
+        "{\"materialPst\":%d,\"mobility\":%d,\"pawnStructure\":%d,"
+        "\"kingSafety\":%d,\"pieceActivity\":%d,\"threats\":%d,"
+        "\"space\":%d,\"total\":%d}\n",
+        trace.material_and_piece_square,
+        trace.mobility,
+        trace.pawn_structure,
+        trace.king_safety,
+        trace.piece_activity,
+        trace.threats,
+        trace.space,
+        trace.total
+    );
+    return 1;
+}
+
 static int parse_depth(const char *text, int *depth) {
     char *end;
     long value;
@@ -371,6 +397,10 @@ int main(int argc, char **argv) {
 
     if (argc == 3 && strcmp(argv[1], "moves") == 0) {
         return print_legal_moves(argv[2]) ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (argc == 3 && strcmp(argv[1], "eval") == 0) {
+        return print_evaluation_trace(argv[2]) ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
     if (argc == 4 && strcmp(argv[1], "search") == 0 &&

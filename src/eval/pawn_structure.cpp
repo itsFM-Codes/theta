@@ -1,5 +1,7 @@
 #include "pawn_structure.h"
 
+#include <stdint.h>
+
 #define DOUBLED_PAWN_PENALTY 12
 #define ISOLATED_PAWN_PENALTY 10
 #define PAWN_ISLAND_PENALTY 6
@@ -9,6 +11,36 @@
 #define CONNECTED_PASSED_PAWN_BONUS 5
 #define BLOCKED_PASSED_PAWN_PENALTY 8
 #define PASSED_PAWN_KING_DISTANCE_SCALE 2
+#define PAWN_HASH_SIZE (1 << 14)
+
+typedef struct PawnHashEntry {
+    uint64_t key;
+    int score;
+    int is_valid;
+} PawnHashEntry;
+
+static thread_local PawnHashEntry pawn_hash[PAWN_HASH_SIZE];
+
+static uint64_t pawn_structure_key(const Position *position) {
+    uint64_t key = UINT64_C(1469598103934665603);
+    int square;
+
+    for (square = 0; square < SQUARE_COUNT; ++square) {
+        Piece piece = position_piece_at(position, square);
+        PieceType type = piece_type(piece);
+
+        if (type == PIECE_TYPE_PAWN || type == PIECE_TYPE_KING) {
+            key ^= (uint64_t)(piece + 1) * 67u + (uint64_t)square;
+            key *= UINT64_C(1099511628211);
+        } else if (type != PIECE_TYPE_NONE) {
+            // Passed-pawn blockage depends on occupancy, but not on the
+            // identity of the blocking non-pawn piece.
+            key ^= UINT64_C(4099) + (uint64_t)square;
+            key *= UINT64_C(1099511628211);
+        }
+    }
+    return key;
+}
 
 static int count_pawns_on_file(
     const Position *position,
@@ -411,10 +443,24 @@ static int side_pawn_structure_score(const Position *position, Color color) {
 }
 
 int pawn_structure_score(const Position *position) {
+    uint64_t key;
+    PawnHashEntry *entry;
+    int score;
+
     if (position == 0) {
         return 0;
     }
 
-    return side_pawn_structure_score(position, COLOR_WHITE) -
-           side_pawn_structure_score(position, COLOR_BLACK);
+    key = pawn_structure_key(position);
+    entry = &pawn_hash[key % PAWN_HASH_SIZE];
+    if (entry->is_valid && entry->key == key) {
+        return entry->score;
+    }
+
+    score = side_pawn_structure_score(position, COLOR_WHITE) -
+            side_pawn_structure_score(position, COLOR_BLACK);
+    entry->key = key;
+    entry->score = score;
+    entry->is_valid = 1;
+    return score;
 }

@@ -28,11 +28,11 @@ are a good sign, but they are not proof of playing strength by themselves.
 
 | Position | Depth | Score | Best move | Nodes |
 | --- | ---: | ---: | --- | ---: |
-| 1 | 5 | 52 | g1f3 | 6,872 |
-| 2 | 5 | -372 | e2a6 | 5,253 |
-| 3 | 5 | 5 | b5b6 | 649 |
-| 4 | 5 | 0 | e2e3 | 6,138 |
-| **Total** | | | | **18,912** |
+| 1 | 5 | 52 | d2d4 | 5,123 |
+| 2 | 5 | -372 | e2a6 | 4,717 |
+| 3 | 5 | 5 | b5b6 | 648 |
+| 4 | 5 | 0 | e1f2 | 6,609 |
+| **Total** | | | | **17,097** |
 
 This baseline was updated after adding quiescence transposition-table support
 on 2026-07-19. The node count was reproduced in consecutive release runs, the
@@ -40,3 +40,12 @@ tactical suite passed 2/2, and the new engine scored 12 wins, 8 losses, and 8
 draws against the preserved pre-change engine in a paired `2+0.02` match.
 
 Elo (based on cutechess with stockfish-18): 1445
+
+The baseline was updated again after the combined search-throughput milestone:
+release build modes, direct pseudo-legal search move handling, lazy move
+picking, clustered persistent hash storage, a pawn hash, continuation history,
+ProbCut, and conservative singular extensions. The 17,097-node result was
+reproduced in consecutive release runs and the tactical suite passed 2/2. In a
+28-game paired `1+0.01` match against the preserved optimized pre-change
+engine, the result was 10 wins, 10 losses, and 8 draws. This small sample is
+neutral rather than evidence of a playing-strength gain.

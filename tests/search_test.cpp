@@ -6,6 +6,7 @@
 #include "src/chess/position.h"
 #include "src/engine/search.h"
 #include "src/engine/search_internal.h"
+#include "src/chess/zobrist.h"
 #include "src/engine/quiescence.h"
 #include "src/eval/evaluation.h"
 
@@ -348,14 +349,24 @@ static void test_shared_search_state_lifecycle(void) {
     Move first_move;
     Move second_move;
     SearchSharedState shared_state;
+    TranspositionTableStatistics statistics = {};
+    Move table_move;
+    int table_score;
 
     set_starting_position(&position);
     assert(initialize_search_shared_state(&shared_state));
 
     search_position_with_state(&shared_state, &position, 3, &first_move);
-    assert(transposition_table_hashfull(
-        &shared_state.transposition_table
-    ) > 0);
+    assert(probe_transposition_table(
+        &shared_state.transposition_table,
+        position_key(&position),
+        3,
+        -SEARCH_INFINITY,
+        SEARCH_INFINITY,
+        &table_score,
+        &table_move,
+        &statistics
+    ));
 
     search_position_with_state(&shared_state, &position, 3, &second_move);
     assert(first_move.from == second_move.from);

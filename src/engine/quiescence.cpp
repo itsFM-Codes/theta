@@ -56,6 +56,7 @@ int quiescence_search(
     SearchContext *context
 ) {
     MoveList moves;
+    MovePicker move_picker;
     Move table_move;
     uint64_t key = 0;
     int table_score;
@@ -133,9 +134,12 @@ int quiescence_search(
         }
     }
 
-    order_moves(position, &moves, 0, context, ply, &table_move);
+    initialize_move_picker(
+        &move_picker, position, &moves, 0, context, ply, &table_move
+    );
 
-    for (index = 0; index < moves.count; ++index) {
+    for (index = 0; move_picker_next(&move_picker, &moves.moves[index]);
+         ++index) {
         Move move = moves.moves[index];
         UndoState undo;
         int tactical_move =

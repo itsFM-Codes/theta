@@ -5,6 +5,7 @@
 
 void generate_moves(const Position *position, MoveList *moves);
 void generate_legal_moves(Position *position, MoveList *moves);
+int make_legal_move(Position *position, Move move, UndoState *undo);
 
 int find_king(const Position *position, Color color);
 int is_square_attacked(

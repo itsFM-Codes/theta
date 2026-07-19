@@ -654,3 +654,32 @@ void generate_legal_moves(Position *position, MoveList *moves) {
         }
     }
 }
+
+int make_legal_move(Position *position, Move move, UndoState *undo) {
+    Color moving_color;
+    int king_square;
+
+    if (position == 0 || undo == 0) {
+        return 0;
+    }
+
+    moving_color = position->side_to_move;
+    if (((move.flags & MOVE_FLAG_CASTLE_KINGSIDE) != 0 ||
+         (move.flags & MOVE_FLAG_CASTLE_QUEENSIDE) != 0) &&
+        !is_castling_path_safe(position, move, moving_color)) {
+        return 0;
+    }
+
+    if (!make_move(position, move, undo)) {
+        return 0;
+    }
+
+    king_square = find_king(position, moving_color);
+    if (!is_valid_square(king_square) ||
+        is_square_attacked(position, king_square, position->side_to_move)) {
+        undo_move(position, move, undo);
+        return 0;
+    }
+
+    return 1;
+}

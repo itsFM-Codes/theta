@@ -12,6 +12,8 @@ typedef struct SearchSharedState {
 } SearchSharedState;
 
 int initialize_search_shared_state(SearchSharedState *state);
+int initialize_search_shared_state_mb(SearchSharedState *state, int hash_mb);
+int resize_search_shared_state(SearchSharedState *state, int hash_mb);
 void clear_search_shared_state(SearchSharedState *state);
 void destroy_search_shared_state(SearchSharedState *state);
 

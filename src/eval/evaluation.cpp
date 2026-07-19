@@ -43,7 +43,10 @@ static int piece_phase(Piece piece) {
     }
 }
 
-int evaluate_position(const Position *position) {
+int evaluate_position_with_trace(
+    const Position *position,
+    EvaluationTrace *trace
+) {
     int score = 0;
     int phase = 0;
     int endgame_weight;
@@ -71,16 +74,36 @@ int evaluate_position(const Position *position) {
         }
     }
 
-    score += mobility_score(position);
-    score += pawn_structure_score(position);
-    score += king_safety_score(position, endgame_weight);
-    score += piece_activity_score(position, endgame_weight);
-    score += threat_score(position);
-    score += space_score(position);
+    if (trace != 0) {
+        trace->material_and_piece_square = score;
+        trace->mobility = mobility_score(position);
+        trace->pawn_structure = pawn_structure_score(position);
+        trace->king_safety = king_safety_score(position, endgame_weight);
+        trace->piece_activity = piece_activity_score(position, endgame_weight);
+        trace->threats = threat_score(position);
+        trace->space = space_score(position);
+        score += trace->mobility + trace->pawn_structure +
+            trace->king_safety + trace->piece_activity + trace->threats +
+            trace->space;
+    } else {
+        score += mobility_score(position);
+        score += pawn_structure_score(position);
+        score += king_safety_score(position, endgame_weight);
+        score += piece_activity_score(position, endgame_weight);
+        score += threat_score(position);
+        score += space_score(position);
+    }
 
     if (position->side_to_move == COLOR_BLACK) {
         score = -score;
     }
 
+    if (trace != 0) {
+        trace->total = score;
+    }
     return score;
+}
+
+int evaluate_position(const Position *position) {
+    return evaluate_position_with_trace(position, 0);
 }

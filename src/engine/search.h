@@ -39,6 +39,10 @@ typedef struct SearchStatistics {
     uint64_t late_move_researches;
     uint64_t aspiration_failures;
     uint64_t aspiration_researches;
+    uint64_t probcut_attempts;
+    uint64_t probcut_cutoffs;
+    uint64_t singular_attempts;
+    uint64_t singular_extensions;
     int selective_depth;
     int elapsed_ms;
     int hashfull;

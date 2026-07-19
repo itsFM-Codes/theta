@@ -45,9 +45,15 @@ void initialize_search_context(
     context->late_move_researches = 0;
     context->aspiration_failures = 0;
     context->aspiration_researches = 0;
+    context->probcut_attempts = 0;
+    context->probcut_cutoffs = 0;
+    context->singular_attempts = 0;
+    context->singular_extensions = 0;
     context->selective_depth = 0;
     context->position_key_count = 0;
     memset(context->history, 0, sizeof(context->history));
+    memset(context->continuation_history, 0,
+           sizeof(context->continuation_history));
     memset(context->capture_history, 0, sizeof(context->capture_history));
     memset(context->static_evaluation_valid, 0,
            sizeof(context->static_evaluation_valid));
@@ -251,6 +257,18 @@ void search_get_statistics(
     statistics->aspiration_researches = context == 0
         ? 0
         : context->aspiration_researches;
+    statistics->probcut_attempts = context == 0
+        ? 0
+        : context->probcut_attempts;
+    statistics->probcut_cutoffs = context == 0
+        ? 0
+        : context->probcut_cutoffs;
+    statistics->singular_attempts = context == 0
+        ? 0
+        : context->singular_attempts;
+    statistics->singular_extensions = context == 0
+        ? 0
+        : context->singular_extensions;
     statistics->selective_depth = context == 0 ? 0 : context->selective_depth;
     statistics->elapsed_ms = search_elapsed_ms(context);
     statistics->hashfull = context == 0

@@ -245,19 +245,6 @@ static int adjusted_late_move_reduction(
     return reduction;
 }
 
-static int move_gives_check(Position *position, Move move) {
-    UndoState undo;
-    int gives_check;
-
-    if (!make_move(position, move, &undo)) {
-        return 0;
-    }
-
-    gives_check = position_is_in_check(position);
-    undo_move(position, move, &undo);
-    return gives_check;
-}
-
 static int pawn_reaches_seventh_rank(const Position *position, Move move) {
     Piece piece = position_piece_at(position, move.from);
     int target_row = square_row(move.to);
@@ -282,9 +269,11 @@ static int negamax(
     int allow_null_move,
     int is_pv_node,
     PrincipalVariation *variation,
-    SearchContext *context
+    SearchContext *context,
+    const Move *excluded_move
 ) {
     MoveList moves;
+    MovePicker move_picker;
     Move table_move;
     uint64_t key;
     int table_score;
@@ -292,6 +281,9 @@ static int negamax(
     int static_score;
     int improving;
     int original_alpha = alpha;
+    int legal_move_count = 0;
+    Move singular_move;
+    int singular_extension = 0;
     int index;
 
     clear_variation(variation);
@@ -299,6 +291,7 @@ static int negamax(
     table_move.to = NO_SQUARE;
     table_move.promotion = PIECE_NONE;
     table_move.flags = MOVE_FLAG_NONE;
+    singular_move = table_move;
 
     search_record_node(context, ply, 0);
 
@@ -332,7 +325,7 @@ static int negamax(
     static_score = search_static_evaluation(position, context, ply);
     improving = position_is_improving(context, ply, static_score);
 
-    if (depth <= 2 && !in_check &&
+    if (excluded_move == 0 && depth <= 2 && !in_check &&
         alpha > -SEARCH_CHECKMATE + MAX_PRINCIPAL_VARIATION &&
         static_score + RAZORING_MARGIN * depth < alpha) {
         int razor_score = quiescence_search(
@@ -355,7 +348,8 @@ static int negamax(
         }
     }
 
-    if (depth <= 2 && !in_check && beta < SEARCH_INFINITY) {
+    if (excluded_move == 0 && depth <= 2 && !in_check &&
+        beta < SEARCH_INFINITY) {
         if (static_score - depth * REVERSE_FUTILITY_MARGIN >= beta) {
             if (context != 0) {
                 context->reverse_futility_prunes++;
@@ -364,7 +358,8 @@ static int negamax(
         }
     }
 
-    if (allow_null_move && depth >= 3 && !in_check && beta < SEARCH_INFINITY &&
+    if (excluded_move == 0 && allow_null_move && depth >= 3 && !in_check &&
+        beta < SEARCH_INFINITY &&
         has_null_move_material(position, position->side_to_move)) {
         Position null_position = *position;
         PrincipalVariation null_variation;
@@ -387,7 +382,8 @@ static int negamax(
             0,
             0,
             &null_variation,
-            context
+            context,
+            0
         );
         search_pop_position(context);
 
@@ -407,7 +403,8 @@ static int negamax(
                     0,
                     0,
                     &verification_variation,
-                    context
+                    context,
+                    0
                 );
 
                 if (search_has_stopped(context)) {
@@ -429,7 +426,7 @@ static int negamax(
 skip_null_cutoff:
 
     key = position_key(position);
-    if (probe_transposition_table(
+    if (excluded_move == 0 && probe_transposition_table(
             &context->shared_state->transposition_table,
             key,
             depth,
@@ -446,24 +443,119 @@ skip_null_cutoff:
         return search_score_from_table(table_score, ply);
     }
 
-    if (!is_pv_node && depth >= 5 && !in_check &&
+    if (excluded_move == 0 && !is_pv_node && depth >= 6 && !in_check &&
+        beta < SEARCH_CHECKMATE - MAX_PRINCIPAL_VARIATION &&
+        static_score >= beta - 100) {
+        MoveList probcut_moves;
+        MovePicker probcut_picker;
+        Move probcut_move;
+        int probcut_beta = beta + 120;
+
+        context->probcut_attempts++;
+        generate_moves(position, &probcut_moves);
+        initialize_move_picker(
+            &probcut_picker,
+            position,
+            &probcut_moves,
+            0,
+            context,
+            ply,
+            &table_move
+        );
+
+        while (move_picker_next(&probcut_picker, &probcut_move)) {
+            PrincipalVariation probcut_variation;
+            UndoState probcut_undo;
+            int probcut_score;
+
+            if ((probcut_move.flags &
+                 (MOVE_FLAG_CAPTURE | MOVE_FLAG_PROMOTION)) == 0) {
+                continue;
+            }
+            if (!make_legal_move(position, probcut_move, &probcut_undo)) {
+                continue;
+            }
+
+            search_push_position(context, position);
+            probcut_score = -negamax(
+                position,
+                depth - 4,
+                -probcut_beta,
+                -probcut_beta + 1,
+                ply + 1,
+                1,
+                0,
+                &probcut_variation,
+                context,
+                0
+            );
+            search_pop_position(context);
+            undo_move(position, probcut_move, &probcut_undo);
+
+            if (search_has_stopped(context)) {
+                return 0;
+            }
+            if (probcut_score >= probcut_beta) {
+                context->probcut_cutoffs++;
+                return beta;
+            }
+        }
+    }
+
+    if (excluded_move == 0 && !is_pv_node && depth >= 5 && !in_check &&
         (!is_valid_square(table_move.from) ||
          !is_valid_square(table_move.to))) {
         depth--;
     }
 
-    generate_legal_moves(position, &moves);
-    order_moves(position, &moves, 1, context, ply, &table_move);
+    if (excluded_move == 0 && depth >= 6 &&
+        is_valid_square(table_move.from) &&
+        is_valid_square(table_move.to)) {
+        TranspositionEntry entry;
 
-    if (moves.count == 0) {
-        if (position_is_in_check(position)) {
-            return -SEARCH_CHECKMATE + ply;
+        if (probe_transposition_entry(
+                &context->shared_state->transposition_table,
+                key,
+                &entry
+            ) && entry.depth >= depth - 2 &&
+            (entry.flag == TRANSPOSITION_EXACT ||
+             entry.flag == TRANSPOSITION_LOWER_BOUND)) {
+            PrincipalVariation singular_variation;
+            int singular_beta = search_score_from_table(entry.score, ply) -
+                depth * 2;
+            int singular_score;
+
+            context->singular_attempts++;
+            singular_score = negamax(
+                position,
+                depth / 2,
+                singular_beta - 1,
+                singular_beta,
+                ply,
+                0,
+                0,
+                &singular_variation,
+                context,
+                &table_move
+            );
+            if (search_has_stopped(context)) {
+                return 0;
+            }
+            if (singular_score < singular_beta) {
+                singular_move = table_move;
+                singular_extension = 1;
+                context->singular_extensions++;
+            }
         }
-
-        return 0;
     }
 
-    for (index = 0; index < moves.count; ++index) {
+    generate_moves(position, &moves);
+    initialize_move_picker(
+        &move_picker, position, &moves, 1, context, ply, &table_move
+    );
+
+    for (index = 0; move_picker_next(&move_picker, &moves.moves[index]);
+         ++index) {
         Move move = moves.moves[index];
         PrincipalVariation child_variation;
         UndoState undo;
@@ -473,19 +565,33 @@ skip_null_cutoff:
         int promotes_pawn;
         int quiet_move;
         Color moving_color;
+        int move_index;
         int score;
 
         if (search_has_stopped(context)) {
             return 0;
         }
 
-        gives_check = move_gives_check(position, move);
+        if (excluded_move != 0 &&
+            move.from == excluded_move->from &&
+            move.to == excluded_move->to &&
+            move.promotion == excluded_move->promotion) {
+            continue;
+        }
+
         promotes_pawn = pawn_reaches_seventh_rank(position, move);
         quiet_move = move_is_quiet(move);
         moving_color = position->side_to_move;
 
+        if (!make_legal_move(position, move, &undo)) {
+            continue;
+        }
+
+        move_index = legal_move_count++;
+        gives_check = position_is_in_check(position);
+
         if (depth <= 2 && !in_check &&
-            index >= late_move_pruning_threshold(
+            move_index >= late_move_pruning_threshold(
                 depth,
                 is_pv_node,
                 improving
@@ -494,20 +600,18 @@ skip_null_cutoff:
             if (context != 0) {
                 context->late_move_prunes++;
             }
+            undo_move(position, move, &undo);
             continue;
         }
 
-        if (depth <= 3 && !is_pv_node && !in_check && index > 0 &&
+        if (depth <= 3 && !is_pv_node && !in_check && move_index > 0 &&
             quiet_move && !gives_check &&
             alpha > -SEARCH_CHECKMATE + MAX_PRINCIPAL_VARIATION &&
             static_score + static_futility_margin(depth, improving) <= alpha) {
             if (context != 0) {
                 context->static_futility_prunes++;
             }
-            continue;
-        }
-
-        if (!make_move(position, move, &undo)) {
+            undo_move(position, move, &undo);
             continue;
         }
 
@@ -516,14 +620,14 @@ skip_null_cutoff:
             context->line_moves[ply] = move;
         }
 
-        if (depth >= 3 && index >= 4 &&
+        if (depth >= 3 && move_index >= 4 &&
             quiet_move &&
             !gives_check) {
             int reduction = adjusted_late_move_reduction(
                 context,
                 moving_color,
                 depth,
-                index,
+                move_index,
                 is_pv_node,
                 improving,
                 move
@@ -540,19 +644,24 @@ skip_null_cutoff:
             search_depth++;
         } else if (promotes_pawn && ply < MAX_CHECK_EXTENSION_PLY) {
             search_depth++;
+        } else if (singular_extension &&
+                   move.from == singular_move.from &&
+                   move.to == singular_move.to &&
+                   move.promotion == singular_move.promotion) {
+            search_depth++;
         }
 
-        if (index == 0) {
+        if (move_index == 0) {
             score = -negamax(
                 position, search_depth, -beta, -alpha, ply + 1, 1,
                 is_pv_node,
-                &child_variation, context
+                &child_variation, context, 0
             );
         } else {
             score = -negamax(
                 position, search_depth, -alpha - 1, -alpha, ply + 1, 1,
                 0,
-                &child_variation, context
+                &child_variation, context, 0
             );
 
             if (score > alpha && score < beta && reduced) {
@@ -560,7 +669,7 @@ skip_null_cutoff:
                 score = -negamax(
                     position, depth - 1, -alpha - 1, -alpha, ply + 1, 1,
                     0,
-                    &child_variation, context
+                    &child_variation, context, 0
                 );
             }
 
@@ -568,7 +677,7 @@ skip_null_cutoff:
                 score = -negamax(
                     position, depth - 1, -beta, -alpha, ply + 1, 1,
                     is_pv_node,
-                    &child_variation, context
+                    &child_variation, context, 0
                 );
             }
         }
@@ -581,7 +690,7 @@ skip_null_cutoff:
 
         if (score >= beta) {
             context->beta_cutoffs++;
-            if (index == 0) {
+            if (move_index == 0) {
                 context->first_move_beta_cutoffs++;
             }
             record_quiet_failures(
@@ -617,7 +726,8 @@ skip_null_cutoff:
                 );
             }
             update_variation(variation, move, &child_variation);
-            store_transposition_table_with_static_evaluation(
+            if (excluded_move == 0) {
+                store_transposition_table_with_static_evaluation(
                 &context->shared_state->transposition_table,
                 key,
                 depth,
@@ -626,7 +736,8 @@ skip_null_cutoff:
                 move,
                 static_score,
                 &context->transposition_statistics
-            );
+                );
+            }
             return beta;
         }
 
@@ -636,18 +747,24 @@ skip_null_cutoff:
         }
     }
 
-    store_transposition_table_with_static_evaluation(
-        &context->shared_state->transposition_table,
-        key,
-        depth,
-        search_score_to_table(alpha, ply),
-        alpha <= original_alpha
-            ? TRANSPOSITION_UPPER_BOUND
-            : TRANSPOSITION_EXACT,
-        variation->count > 0 ? variation->moves[0] : table_move,
-        static_score,
-        &context->transposition_statistics
-    );
+    if (legal_move_count == 0) {
+        return in_check ? -SEARCH_CHECKMATE + ply : 0;
+    }
+
+    if (excluded_move == 0) {
+        store_transposition_table_with_static_evaluation(
+            &context->shared_state->transposition_table,
+            key,
+            depth,
+            search_score_to_table(alpha, ply),
+            alpha <= original_alpha
+                ? TRANSPOSITION_UPPER_BOUND
+                : TRANSPOSITION_EXACT,
+            variation->count > 0 ? variation->moves[0] : table_move,
+            static_score,
+            &context->transposition_statistics
+        );
+    }
 
     return alpha;
 }
@@ -661,6 +778,7 @@ static int search_position_with_variation(
     SearchContext *context
 ) {
     MoveList moves;
+    MovePicker move_picker;
     Move table_move;
     uint64_t key;
     int table_score;
@@ -710,7 +828,9 @@ static int search_position_with_variation(
     }
 
     generate_legal_moves(position, &moves);
-    order_moves(position, &moves, 1, context, 0, &table_move);
+    initialize_move_picker(
+        &move_picker, position, &moves, 1, context, 0, &table_move
+    );
 
     if (moves.count == 0) {
         if (position_is_in_check(position)) {
@@ -720,7 +840,8 @@ static int search_position_with_variation(
         return 0;
     }
 
-    for (index = 0; index < moves.count; ++index) {
+    for (index = 0; move_picker_next(&move_picker, &moves.moves[index]);
+         ++index) {
         Move move = moves.moves[index];
         PrincipalVariation child_variation;
         UndoState undo;
@@ -750,7 +871,8 @@ static int search_position_with_variation(
                 1,
                 1,
                 &child_variation,
-                context
+                context,
+                0
             );
         } else {
             score = -negamax(
@@ -762,7 +884,8 @@ static int search_position_with_variation(
                 1,
                 0,
                 &child_variation,
-                context
+                context,
+                0
             );
 
             if (score > alpha && score < beta) {
@@ -775,7 +898,8 @@ static int search_position_with_variation(
                     1,
                     1,
                     &child_variation,
-                    context
+                    context,
+                    0
                 );
             }
         }
