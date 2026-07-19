@@ -2,7 +2,6 @@
 #define CONFIG_H
 
 typedef struct EngineConfig {
-    int threads;
     int max_depth;
 } EngineConfig;
 

@@ -148,6 +148,7 @@ echo [BUILD] search_test
     src\chess\movegen.cpp ^
     src\chess\zobrist.cpp ^
     src\engine\search.cpp ^
+    src\engine\search_state.cpp ^
     src\engine\search_context.cpp ^
     src\engine\move_ordering.cpp ^
     src\engine\quiescence.cpp ^

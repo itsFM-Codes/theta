@@ -302,6 +302,7 @@ static void print_search_info(
 }
 
 static void search_from_command(
+    SearchSharedState *shared_state,
     Position position,
     const std::vector<uint64_t> &history,
     char *arguments,
@@ -411,7 +412,8 @@ static void search_from_command(
     limits.game_history = history.empty() ? 0 : history.data();
     limits.game_history_count = (int)history.size();
 
-    search_iterative_with_limits(
+    search_iterative_with_state_and_limits(
+        shared_state,
         &position,
         depth,
         &limits,
@@ -436,6 +438,7 @@ static void search_from_command(
 }
 
 typedef struct UciSearchTask {
+    SearchSharedState *shared_state;
     Position position;
     std::vector<uint64_t> history;
     std::string arguments;
@@ -449,6 +452,7 @@ static void execute_search_task(UciSearchTask *task) {
     );
     mutable_arguments.push_back('\0');
     search_from_command(
+        task->shared_state,
         task->position,
         task->history,
         mutable_arguments.data(),
@@ -466,6 +470,7 @@ static DWORD WINAPI uci_search_thread_proc(LPVOID data) {
 
 int run_uci(void) {
     Position position;
+    SearchSharedState shared_state;
     std::vector<uint64_t> position_history;
 #ifdef _WIN32
     HANDLE search_thread = 0;
@@ -474,6 +479,11 @@ int run_uci(void) {
 #endif
     std::atomic<bool> stop_requested(false);
     char line[UCI_LINE_SIZE];
+
+    if (!initialize_search_shared_state(&shared_state)) {
+        fprintf(stderr, "Error: Could not initialize shared search state\n");
+        return 0;
+    }
 
     set_starting_position(&position);
     position_history.push_back(position_key(&position));
@@ -513,6 +523,7 @@ int run_uci(void) {
             UciLock lock(uci_output_mutex);
             printf("id name Theta\n");
             printf("id author FM\n");
+            printf("option name Threads type spin default 1 min 1 max 1\n");
             printf("uciok\n");
             fflush(stdout);
         } else if (strcmp(arguments, "isready") == 0) {
@@ -521,6 +532,7 @@ int run_uci(void) {
             fflush(stdout);
         } else if (strcmp(arguments, "ucinewgame") == 0) {
             stop_search();
+            clear_search_shared_state(&shared_state);
             set_starting_position(&position);
             position_history.clear();
             position_history.push_back(position_key(&position));
@@ -537,6 +549,7 @@ int run_uci(void) {
             stop_search();
             stop_requested.store(false, std::memory_order_relaxed);
             UciSearchTask *task = new UciSearchTask;
+            task->shared_state = &shared_state;
             task->position = position;
             task->history = position_history;
             task->arguments = arguments + 2;
@@ -560,10 +573,12 @@ int run_uci(void) {
             stop_search();
         } else if (strcmp(arguments, "quit") == 0) {
             stop_search();
+            destroy_search_shared_state(&shared_state);
             return 1;
         }
     }
 
     stop_search();
+    destroy_search_shared_state(&shared_state);
     return 1;
 }

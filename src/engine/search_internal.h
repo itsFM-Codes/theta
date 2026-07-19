@@ -4,6 +4,7 @@
 #include <chrono>
 
 #include "search.h"
+#include "search_state.h"
 #include "transposition_table.h"
 
 #define MAX_KILLER_PLY 64
@@ -45,10 +46,17 @@ typedef struct SearchContext {
     int static_evaluation_valid[MAX_SEARCH_PLY];
     uint64_t position_keys[MAX_POSITION_HISTORY];
     int position_key_count;
-    TranspositionTable table;
+    // Shared, engine-owned data. Everything else in this structure is private
+    // to one search worker.
+    SearchSharedState *shared_state;
+    TranspositionTableStatistics transposition_statistics;
 } SearchContext;
 
-void initialize_search_context(SearchContext *context, int time_limit_ms);
+void initialize_search_context(
+    SearchContext *context,
+    SearchSharedState *shared_state,
+    int time_limit_ms
+);
 void destroy_search_context(SearchContext *context);
 int search_has_stopped(SearchContext *context);
 int search_elapsed_ms(const SearchContext *context);

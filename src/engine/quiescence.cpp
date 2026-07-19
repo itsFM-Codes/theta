@@ -86,8 +86,9 @@ int quiescence_search(
     if (context != 0) {
         key = position_key(position);
         if (probe_transposition_table(
-                &context->table, key, 0, alpha, beta, &table_score,
-                &table_move
+                &context->shared_state->transposition_table,
+                key, 0, alpha, beta, &table_score,
+                &table_move, &context->transposition_statistics
             )) {
             return search_score_from_table(table_score, ply);
         }
@@ -100,8 +101,10 @@ int quiescence_search(
         int score = in_check ? -SEARCH_CHECKMATE + ply : 0;
         if (context != 0) {
             store_transposition_table(
-                &context->table, key, 0, search_score_to_table(score, ply),
-                TRANSPOSITION_EXACT, table_move
+                &context->shared_state->transposition_table,
+                key, 0, search_score_to_table(score, ply),
+                TRANSPOSITION_EXACT, table_move,
+                &context->transposition_statistics
             );
         }
         if (in_check) {
@@ -116,8 +119,10 @@ int quiescence_search(
         if (stand_pat >= beta) {
             if (context != 0) {
                 store_transposition_table(
-                    &context->table, key, 0, search_score_to_table(beta, ply),
-                    TRANSPOSITION_LOWER_BOUND, table_move
+                    &context->shared_state->transposition_table,
+                    key, 0, search_score_to_table(beta, ply),
+                    TRANSPOSITION_LOWER_BOUND, table_move,
+                    &context->transposition_statistics
                 );
             }
             return beta;
@@ -187,8 +192,10 @@ int quiescence_search(
         if (score >= beta) {
             if (context != 0) {
                 store_transposition_table(
-                    &context->table, key, 0, search_score_to_table(beta, ply),
-                    TRANSPOSITION_LOWER_BOUND, move
+                    &context->shared_state->transposition_table,
+                    key, 0, search_score_to_table(beta, ply),
+                    TRANSPOSITION_LOWER_BOUND, move,
+                    &context->transposition_statistics
                 );
             }
             return beta;
@@ -202,11 +209,13 @@ int quiescence_search(
 
     if (context != 0) {
         store_transposition_table(
-            &context->table, key, 0, search_score_to_table(alpha, ply),
+            &context->shared_state->transposition_table,
+            key, 0, search_score_to_table(alpha, ply),
             alpha <= original_alpha
                 ? TRANSPOSITION_UPPER_BOUND
                 : TRANSPOSITION_EXACT,
-            table_move
+            table_move,
+            &context->transposition_statistics
         );
     }
     return alpha;

@@ -130,6 +130,7 @@ static void test_quiescence_keeps_starting_position_equal(void) {
 static void test_quiescence_considers_quiet_checks(void) {
     Position position;
     SearchContext context;
+    SearchSharedState shared_state;
     int score;
 
     clear_position(&position);
@@ -138,7 +139,8 @@ static void test_quiescence_considers_quiet_checks(void) {
     position_set_piece(&position, make_square(0, 7), PIECE_BLACK_KING);
     position.side_to_move = COLOR_WHITE;
 
-    initialize_search_context(&context, 0);
+    assert(initialize_search_shared_state(&shared_state));
+    initialize_search_context(&context, &shared_state, 0);
     assert(search_push_position(&context, &position));
     score = quiescence_search(
         &position,
@@ -151,11 +153,13 @@ static void test_quiescence_considers_quiet_checks(void) {
     assert(score > 0);
     assert(context.quiescence_check_moves > 0);
     destroy_search_context(&context);
+    destroy_search_shared_state(&shared_state);
 }
 
 static void test_quiescence_searches_quiet_check_evasion(void) {
     Position position;
     SearchContext context;
+    SearchSharedState shared_state;
     MoveList moves;
     int score;
 
@@ -168,7 +172,8 @@ static void test_quiescence_searches_quiet_check_evasion(void) {
     assert(moves.moves[0].from == make_square(7, 1));
     assert(moves.moves[0].to == make_square(6, 0));
 
-    initialize_search_context(&context, 0);
+    assert(initialize_search_shared_state(&shared_state));
+    initialize_search_context(&context, &shared_state, 0);
     assert(search_push_position(&context, &position));
     score = quiescence_search(
         &position,
@@ -179,6 +184,7 @@ static void test_quiescence_searches_quiet_check_evasion(void) {
     );
     assert(score > -SEARCH_CHECKMATE + MAX_PRINCIPAL_VARIATION);
     destroy_search_context(&context);
+    destroy_search_shared_state(&shared_state);
 }
 
 static void test_search_returns_a_legal_move(void) {
@@ -224,28 +230,34 @@ static void test_fifty_move_draw(void) {
 static void test_threefold_repetition_detection(void) {
     Position position;
     SearchContext context;
+    SearchSharedState shared_state;
 
     set_starting_position(&position);
     position.halfmove_clock = 4;
-    initialize_search_context(&context, 0);
+    assert(initialize_search_shared_state(&shared_state));
+    initialize_search_context(&context, &shared_state, 0);
     assert(search_push_position(&context, &position));
     assert(search_push_position(&context, &position));
     assert(search_push_position(&context, &position));
     assert(search_is_draw(&context, &position));
     destroy_search_context(&context);
+    destroy_search_shared_state(&shared_state);
 }
 
 static void test_repetition_scan_stops_at_irreversible_move(void) {
     Position position;
     SearchContext context;
+    SearchSharedState shared_state;
 
     set_starting_position(&position);
-    initialize_search_context(&context, 0);
+    assert(initialize_search_shared_state(&shared_state));
+    initialize_search_context(&context, &shared_state, 0);
     assert(search_push_position(&context, &position));
     assert(search_push_position(&context, &position));
     assert(search_push_position(&context, &position));
     assert(!search_is_draw(&context, &position));
     destroy_search_context(&context);
+    destroy_search_shared_state(&shared_state);
 }
 
 static void test_external_stop_returns_a_legal_fallback(void) {
@@ -331,6 +343,32 @@ static void test_search_reports_statistics(void) {
            callback_statistics.aspiration_failures);
 }
 
+static void test_shared_search_state_lifecycle(void) {
+    Position position;
+    Move first_move;
+    Move second_move;
+    SearchSharedState shared_state;
+
+    set_starting_position(&position);
+    assert(initialize_search_shared_state(&shared_state));
+
+    search_position_with_state(&shared_state, &position, 3, &first_move);
+    assert(transposition_table_hashfull(
+        &shared_state.transposition_table
+    ) > 0);
+
+    search_position_with_state(&shared_state, &position, 3, &second_move);
+    assert(first_move.from == second_move.from);
+    assert(first_move.to == second_move.to);
+
+    clear_search_shared_state(&shared_state);
+    assert(transposition_table_hashfull(
+        &shared_state.transposition_table
+    ) == 0);
+
+    destroy_search_shared_state(&shared_state);
+}
+
 static void test_node_limited_search_returns_a_legal_move(void) {
     Position position;
     Move best_move;
@@ -401,6 +439,7 @@ int main(void) {
     test_external_stop_returns_a_legal_fallback();
     test_insufficient_material_draw();
     test_search_reports_statistics();
+    test_shared_search_state_lifecycle();
     test_node_limited_search_returns_a_legal_move();
     test_tactical_positions();
     test_mate_distance_score();

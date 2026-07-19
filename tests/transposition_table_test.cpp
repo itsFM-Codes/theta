@@ -32,6 +32,7 @@ static void test_position_key_restores_after_undo(void) {
 
 static void test_exact_table_entry(void) {
     TranspositionTable table;
+    TranspositionTableStatistics statistics = {};
     Move move = make_test_move();
     Move stored_move;
     int score;
@@ -43,7 +44,8 @@ static void test_exact_table_entry(void) {
         4,
         87,
         TRANSPOSITION_EXACT,
-        move
+        move,
+        &statistics
     );
 
     assert(probe_transposition_table(
@@ -53,15 +55,16 @@ static void test_exact_table_entry(void) {
         -100,
         100,
         &score,
-        &stored_move
+        &stored_move,
+        &statistics
     ));
     assert(score == 87);
     assert(stored_move.from == move.from);
     assert(stored_move.to == move.to);
-    assert(table.probes == 1);
-    assert(table.key_hits == 1);
-    assert(table.score_cutoffs == 1);
-    assert(table.stores == 1);
+    assert(statistics.probes == 1);
+    assert(statistics.key_hits == 1);
+    assert(statistics.score_cutoffs == 1);
+    assert(statistics.stores == 1);
     assert(transposition_table_hashfull(&table) == 0);
 
     destroy_transposition_table(&table);
@@ -69,6 +72,7 @@ static void test_exact_table_entry(void) {
 
 static void test_bound_table_entry(void) {
     TranspositionTable table;
+    TranspositionTableStatistics statistics = {};
     Move move = make_test_move();
     int score;
 
@@ -79,7 +83,8 @@ static void test_bound_table_entry(void) {
         3,
         50,
         TRANSPOSITION_LOWER_BOUND,
-        move
+        move,
+        &statistics
     );
 
     assert(probe_transposition_table(
@@ -89,18 +94,20 @@ static void test_bound_table_entry(void) {
         -100,
         40,
         &score,
-        0
+        0,
+        &statistics
     ));
     assert(score == 50);
-    assert(table.probes == 1);
-    assert(table.key_hits == 1);
-    assert(table.score_cutoffs == 1);
+    assert(statistics.probes == 1);
+    assert(statistics.key_hits == 1);
+    assert(statistics.score_cutoffs == 1);
 
     destroy_transposition_table(&table);
 }
 
 static void test_table_move_survives_unusable_score(void) {
     TranspositionTable table;
+    TranspositionTableStatistics statistics = {};
     Move move = make_test_move();
     Move stored_move;
     int score = 0;
@@ -112,7 +119,8 @@ static void test_table_move_survives_unusable_score(void) {
         1,
         25,
         TRANSPOSITION_EXACT,
-        move
+        move,
+        &statistics
     );
 
     assert(!probe_transposition_table(
@@ -122,19 +130,21 @@ static void test_table_move_survives_unusable_score(void) {
         -100,
         100,
         &score,
-        &stored_move
+        &stored_move,
+        &statistics
     ));
     assert(stored_move.from == move.from);
     assert(stored_move.to == move.to);
-    assert(table.probes == 1);
-    assert(table.key_hits == 1);
-    assert(table.score_cutoffs == 0);
+    assert(statistics.probes == 1);
+    assert(statistics.key_hits == 1);
+    assert(statistics.score_cutoffs == 0);
 
     destroy_transposition_table(&table);
 }
 
 static void test_static_evaluation_entry(void) {
     TranspositionTable table;
+    TranspositionTableStatistics statistics = {};
     Move move = make_test_move();
     int static_evaluation = 0;
 
@@ -146,7 +156,8 @@ static void test_static_evaluation_entry(void) {
         10,
         TRANSPOSITION_EXACT,
         move,
-        123
+        123,
+        &statistics
     );
 
     assert(probe_transposition_static_evaluation(
@@ -162,7 +173,8 @@ static void test_static_evaluation_entry(void) {
         4,
         12,
         TRANSPOSITION_EXACT,
-        move
+        move,
+        &statistics
     );
     static_evaluation = 0;
     assert(probe_transposition_static_evaluation(

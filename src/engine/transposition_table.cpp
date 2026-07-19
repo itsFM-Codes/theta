@@ -13,10 +13,20 @@ void initialize_transposition_table(TranspositionTable *table) {
         sizeof(TranspositionEntry)
     );
     table->count = table->entries == 0 ? 0 : TRANSPOSITION_TABLE_SIZE;
-    table->probes = 0;
-    table->key_hits = 0;
-    table->score_cutoffs = 0;
-    table->stores = 0;
+}
+
+void clear_transposition_table(TranspositionTable *table) {
+    if (table == 0) {
+        return;
+    }
+
+    if (table->entries != 0 && table->count > 0) {
+        memset(
+            table->entries,
+            0,
+            (size_t)table->count * sizeof(TranspositionEntry)
+        );
+    }
 }
 
 void destroy_transposition_table(TranspositionTable *table) {
@@ -27,10 +37,6 @@ void destroy_transposition_table(TranspositionTable *table) {
     free(table->entries);
     table->entries = 0;
     table->count = 0;
-    table->probes = 0;
-    table->key_hits = 0;
-    table->score_cutoffs = 0;
-    table->stores = 0;
 }
 
 int probe_transposition_table(
@@ -40,7 +46,8 @@ int probe_transposition_table(
     int alpha,
     int beta,
     int *score,
-    Move *best_move
+    Move *best_move,
+    TranspositionTableStatistics *statistics
 ) {
     const TranspositionEntry *entry;
 
@@ -48,7 +55,9 @@ int probe_transposition_table(
         return 0;
     }
 
-    table->probes++;
+    if (statistics != 0) {
+        statistics->probes++;
+    }
 
     entry = &table->entries[key % (uint64_t)table->count];
 
@@ -56,7 +65,9 @@ int probe_transposition_table(
         return 0;
     }
 
-    table->key_hits++;
+    if (statistics != 0) {
+        statistics->key_hits++;
+    }
 
     if (best_move != 0) {
         *best_move = entry->best_move;
@@ -73,7 +84,9 @@ int probe_transposition_table(
             *score = entry->score;
         }
 
-        table->score_cutoffs++;
+        if (statistics != 0) {
+            statistics->score_cutoffs++;
+        }
 
         return 1;
     }
@@ -113,7 +126,8 @@ static void store_transposition_table_with_optional_static_evaluation(
     TranspositionFlag flag,
     Move best_move,
     int has_static_evaluation,
-    int static_evaluation
+    int static_evaluation,
+    TranspositionTableStatistics *statistics
 ) {
     TranspositionEntry *entry;
     int preserve_static_evaluation = 0;
@@ -150,7 +164,9 @@ static void store_transposition_table_with_optional_static_evaluation(
     entry->is_valid = 1;
     entry->has_static_evaluation =
         has_static_evaluation || preserve_static_evaluation;
-    table->stores++;
+    if (statistics != 0) {
+        statistics->stores++;
+    }
 }
 
 void store_transposition_table(
@@ -159,7 +175,8 @@ void store_transposition_table(
     int depth,
     int score,
     TranspositionFlag flag,
-    Move best_move
+    Move best_move,
+    TranspositionTableStatistics *statistics
 ) {
     store_transposition_table_with_optional_static_evaluation(
         table,
@@ -169,7 +186,8 @@ void store_transposition_table(
         flag,
         best_move,
         0,
-        0
+        0,
+        statistics
     );
 }
 
@@ -180,7 +198,8 @@ void store_transposition_table_with_static_evaluation(
     int score,
     TranspositionFlag flag,
     Move best_move,
-    int static_evaluation
+    int static_evaluation,
+    TranspositionTableStatistics *statistics
 ) {
     store_transposition_table_with_optional_static_evaluation(
         table,
@@ -190,7 +209,8 @@ void store_transposition_table_with_static_evaluation(
         flag,
         best_move,
         1,
-        static_evaluation
+        static_evaluation,
+        statistics
     );
 }
 

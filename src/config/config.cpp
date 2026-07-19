@@ -41,7 +41,6 @@ static int parse_int(const char *text, int *value) {
 }
 
 void set_default_config(EngineConfig *config) {
-    config->threads = 1;
     config->max_depth = 6;
 }
 
@@ -91,11 +90,10 @@ int load_config(const char *filename) {
         }
 
         if (strcmp(key, "threads") == 0) {
-            if (number < 1 || number > 256) {
-                fprintf(stderr, "Warning: threads must be between 1 and 256\n");
-            } else {
-                g_config.threads = number;
-            }
+            fprintf(
+                stderr,
+                "Warning: threads is reserved for future multi-threaded search; using one thread\n"
+            );
         } else if (strcmp(key, "max_depth") == 0) {
             if (number < 1 || number > 128) {
                 fprintf(stderr, "Warning: max_depth must be between 1 and 128\n");

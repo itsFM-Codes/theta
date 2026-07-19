@@ -5,6 +5,7 @@
 
 #include "src/chess/move.h"
 #include "src/chess/position.h"
+#include "search_state.h"
 
 #define SEARCH_INFINITY 30000
 #define SEARCH_CHECKMATE 29000
@@ -62,6 +63,12 @@ typedef struct SearchLimits {
 } SearchLimits;
 
 int search_position(Position *position, int depth, Move *best_move);
+int search_position_with_state(
+    SearchSharedState *shared_state,
+    Position *position,
+    int depth,
+    Move *best_move
+);
 int search_iterative(
     Position *position,
     int maximum_depth,
@@ -92,6 +99,17 @@ int search_iterative_with_callback_and_node_limit(
     void *user_data
 );
 int search_iterative_with_limits(
+    Position *position,
+    int maximum_depth,
+    const SearchLimits *limits,
+    Move *best_move,
+    PrincipalVariation *variation,
+    int *completed_depth,
+    SearchInfoCallback callback,
+    void *user_data
+);
+int search_iterative_with_state_and_limits(
+    SearchSharedState *shared_state,
     Position *position,
     int maximum_depth,
     const SearchLimits *limits,

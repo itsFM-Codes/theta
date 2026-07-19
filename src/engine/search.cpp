@@ -165,7 +165,7 @@ static int search_static_evaluation(
 
     if (context != 0 &&
         probe_transposition_static_evaluation(
-            &context->table,
+            &context->shared_state->transposition_table,
             position_key(position),
             &score
         )) {
@@ -430,13 +430,14 @@ skip_null_cutoff:
 
     key = position_key(position);
     if (probe_transposition_table(
-            &context->table,
+            &context->shared_state->transposition_table,
             key,
             depth,
             alpha,
             beta,
             &table_score,
-            &table_move
+            &table_move,
+            &context->transposition_statistics
         )) {
         if (is_valid_square(table_move.from) && is_valid_square(table_move.to)) {
             update_variation(variation, table_move, 0);
@@ -617,13 +618,14 @@ skip_null_cutoff:
             }
             update_variation(variation, move, &child_variation);
             store_transposition_table_with_static_evaluation(
-                &context->table,
+                &context->shared_state->transposition_table,
                 key,
                 depth,
                 search_score_to_table(beta, ply),
                 TRANSPOSITION_LOWER_BOUND,
                 move,
-                static_score
+                static_score,
+                &context->transposition_statistics
             );
             return beta;
         }
@@ -635,7 +637,7 @@ skip_null_cutoff:
     }
 
     store_transposition_table_with_static_evaluation(
-        &context->table,
+        &context->shared_state->transposition_table,
         key,
         depth,
         search_score_to_table(alpha, ply),
@@ -643,7 +645,8 @@ skip_null_cutoff:
             ? TRANSPOSITION_UPPER_BOUND
             : TRANSPOSITION_EXACT,
         variation->count > 0 ? variation->moves[0] : table_move,
-        static_score
+        static_score,
+        &context->transposition_statistics
     );
 
     return alpha;
@@ -690,13 +693,14 @@ static int search_position_with_variation(
 
     key = position_key(position);
     if (probe_transposition_table(
-            &context->table,
+            &context->shared_state->transposition_table,
             key,
             depth,
             alpha,
             beta,
             &table_score,
-            &table_move
+            &table_move,
+            &context->transposition_statistics
         )) {
         if (is_valid_square(table_move.from) && is_valid_square(table_move.to)) {
             update_variation(variation, table_move, 0);
@@ -821,12 +825,13 @@ static int search_position_with_variation(
             }
             update_variation(variation, move, &child_variation);
             store_transposition_table(
-                &context->table,
+                &context->shared_state->transposition_table,
                 key,
                 depth,
                 search_score_to_table(beta, 0),
                 TRANSPOSITION_LOWER_BOUND,
-                move
+                move,
+                &context->transposition_statistics
             );
             return beta;
         }
@@ -838,25 +843,35 @@ static int search_position_with_variation(
     }
 
     store_transposition_table(
-        &context->table,
+        &context->shared_state->transposition_table,
         key,
         depth,
         search_score_to_table(alpha, 0),
         alpha <= original_alpha
             ? TRANSPOSITION_UPPER_BOUND
             : TRANSPOSITION_EXACT,
-        variation->count > 0 ? variation->moves[0] : table_move
+        variation->count > 0 ? variation->moves[0] : table_move,
+        &context->transposition_statistics
     );
 
     return alpha;
 }
 
-int search_position(Position *position, int depth, Move *best_move) {
+int search_position_with_state(
+    SearchSharedState *shared_state,
+    Position *position,
+    int depth,
+    Move *best_move
+) {
     PrincipalVariation variation;
     SearchContext context;
     int score;
 
-    initialize_search_context(&context, 0);
+    if (shared_state == 0) {
+        return 0;
+    }
+
+    initialize_search_context(&context, shared_state, 0);
     initialize_lmr_reductions();
     search_push_position(&context, position);
     score = search_position_with_variation(
@@ -881,6 +896,18 @@ int search_position(Position *position, int depth, Move *best_move) {
 
     destroy_search_context(&context);
 
+    return score;
+}
+
+int search_position(Position *position, int depth, Move *best_move) {
+    SearchSharedState shared_state;
+    int score;
+
+    if (!initialize_search_shared_state(&shared_state)) {
+        return 0;
+    }
+    score = search_position_with_state(&shared_state, position, depth, best_move);
+    destroy_search_shared_state(&shared_state);
     return score;
 }
 
@@ -920,7 +947,8 @@ static int moves_are_equal(Move first, Move second) {
            first.flags == second.flags;
 }
 
-int search_iterative_with_limits(
+int search_iterative_with_state_and_limits(
+    SearchSharedState *shared_state,
     Position *position,
     int maximum_depth,
     const SearchLimits *limits,
@@ -960,7 +988,7 @@ int search_iterative_with_limits(
 
     clear_variation(variation);
 
-    if (position == 0) {
+    if (shared_state == 0 || position == 0) {
         return 0;
     }
 
@@ -968,7 +996,11 @@ int search_iterative_with_limits(
         return evaluate_position(position);
     }
 
-    initialize_search_context(&context, limits == 0 ? 0 : limits->hard_time_ms);
+    initialize_search_context(
+        &context,
+        shared_state,
+        limits == 0 ? 0 : limits->hard_time_ms
+    );
     initialize_lmr_reductions();
     search_set_limits(&context, limits);
     if (limits != 0) {
@@ -1109,6 +1141,37 @@ int search_iterative_with_limits(
 
     destroy_search_context(&context);
     return completed_score;
+}
+
+int search_iterative_with_limits(
+    Position *position,
+    int maximum_depth,
+    const SearchLimits *limits,
+    Move *best_move,
+    PrincipalVariation *variation,
+    int *completed_depth,
+    SearchInfoCallback callback,
+    void *user_data
+) {
+    SearchSharedState shared_state;
+    int score;
+
+    if (!initialize_search_shared_state(&shared_state)) {
+        return 0;
+    }
+    score = search_iterative_with_state_and_limits(
+        &shared_state,
+        position,
+        maximum_depth,
+        limits,
+        best_move,
+        variation,
+        completed_depth,
+        callback,
+        user_data
+    );
+    destroy_search_shared_state(&shared_state);
+    return score;
 }
 
 int search_iterative_with_callback(

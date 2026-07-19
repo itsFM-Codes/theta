@@ -12,7 +12,11 @@ static void clear_move(Move *move) {
     move->flags = MOVE_FLAG_NONE;
 }
 
-void initialize_search_context(SearchContext *context, int time_limit_ms) {
+void initialize_search_context(
+    SearchContext *context,
+    SearchSharedState *shared_state,
+    int time_limit_ms
+) {
     int ply;
     int from;
     int to;
@@ -47,7 +51,12 @@ void initialize_search_context(SearchContext *context, int time_limit_ms) {
     memset(context->capture_history, 0, sizeof(context->capture_history));
     memset(context->static_evaluation_valid, 0,
            sizeof(context->static_evaluation_valid));
-    initialize_transposition_table(&context->table);
+    context->shared_state = shared_state;
+    memset(
+        &context->transposition_statistics,
+        0,
+        sizeof(context->transposition_statistics)
+    );
 
     for (ply = 0; ply < MAX_KILLER_PLY; ++ply) {
         clear_move(&context->killer_moves[ply][0]);
@@ -67,9 +76,8 @@ void initialize_search_context(SearchContext *context, int time_limit_ms) {
 }
 
 void destroy_search_context(SearchContext *context) {
-    if (context != 0) {
-        destroy_transposition_table(&context->table);
-    }
+    // SearchContext borrows shared resources and owns no dynamic memory.
+    (void)context;
 }
 
 int search_has_stopped(SearchContext *context) {
@@ -191,12 +199,23 @@ void search_get_statistics(
 
     statistics->nodes = context == 0 ? 0 : context->nodes;
     statistics->quiescence_nodes = context == 0 ? 0 : context->quiescence_nodes;
-    statistics->transposition_probes = context == 0 ? 0 : context->table.probes;
-    statistics->transposition_key_hits = context == 0 ? 0 : context->table.key_hits;
+    const TranspositionTable *table = context == 0 ||
+        context->shared_state == 0
+        ? 0
+        : &context->shared_state->transposition_table;
+
+    statistics->transposition_probes = context == 0
+        ? 0
+        : context->transposition_statistics.probes;
+    statistics->transposition_key_hits = context == 0
+        ? 0
+        : context->transposition_statistics.key_hits;
     statistics->transposition_cutoffs = context == 0
         ? 0
-        : context->table.score_cutoffs;
-    statistics->transposition_stores = context == 0 ? 0 : context->table.stores;
+        : context->transposition_statistics.score_cutoffs;
+    statistics->transposition_stores = context == 0
+        ? 0
+        : context->transposition_statistics.stores;
     statistics->beta_cutoffs = context == 0 ? 0 : context->beta_cutoffs;
     statistics->first_move_beta_cutoffs = context == 0
         ? 0
@@ -236,7 +255,7 @@ void search_get_statistics(
     statistics->elapsed_ms = search_elapsed_ms(context);
     statistics->hashfull = context == 0
         ? 0
-        : transposition_table_hashfull(&context->table);
+        : transposition_table_hashfull(table);
 }
 
 int search_push_position(SearchContext *context, const Position *position) {
