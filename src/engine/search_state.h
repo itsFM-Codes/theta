@@ -3,10 +3,8 @@
 
 #include "transposition_table.h"
 
-// Resources shared by searches belonging to one engine instance. Future search
-// workers should borrow this state while keeping their SearchContext private.
-// Transposition-table entry access must be made thread-safe before more than
-// one worker uses the state concurrently.
+// State shared by one engine instance.
+// Make table access thread-safe before parallel search.
 typedef struct SearchSharedState {
     TranspositionTable transposition_table;
 } SearchSharedState;

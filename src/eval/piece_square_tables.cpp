@@ -1,9 +1,6 @@
 #include "piece_square_tables.h"
 
-/*
- * Each table is written from White's point of view:
- * a1 through h1 first, then up to a8 through h8.
- */
+// White's view: a1 to h8.
 static const int PAWN_TABLE[SQUARE_COUNT] = {
      0,  0,  0,  0,  0,  0,  0,  0,
      5, 10, 10,-20,-20, 10, 10,  5,

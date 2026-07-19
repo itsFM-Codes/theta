@@ -33,8 +33,7 @@ static uint64_t pawn_structure_key(const Position *position) {
             key ^= (uint64_t)(piece + 1) * 67u + (uint64_t)square;
             key *= UINT64_C(1099511628211);
         } else if (type != PIECE_TYPE_NONE) {
-            // Passed-pawn blockage depends on occupancy, but not on the
-            // identity of the blocking non-pawn piece.
+            // Only occupancy affects pawn blockage.
             key ^= UINT64_C(4099) + (uint64_t)square;
             key *= UINT64_C(1099511628211);
         }

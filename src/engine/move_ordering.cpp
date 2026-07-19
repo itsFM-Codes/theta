@@ -28,6 +28,24 @@ static void update_history_score(int *score, int bonus) {
 
 }
 
+static void update_continuation_history_score(short *score, int bonus) {
+    int updated;
+
+    if (score == 0) {
+        return;
+    }
+
+    updated = *score;
+    updated += bonus - updated * (bonus < 0 ? -bonus : bonus) /
+        MAX_HISTORY_SCORE;
+    if (updated > MAX_HISTORY_SCORE) {
+        updated = MAX_HISTORY_SCORE;
+    } else if (updated < -MAX_HISTORY_SCORE) {
+        updated = -MAX_HISTORY_SCORE;
+    }
+    *score = (short)updated;
+}
+
 static int moves_are_equal(Move first, Move second) {
     return first.from == second.from &&
            first.to == second.to &&
@@ -91,21 +109,33 @@ static int killer_move_score(
 
 static int history_move_score(
     const SearchContext *context,
+    const Position *position,
     Color color,
     int ply,
     Move move
 ) {
     int score;
 
-    if (context == 0 || color == COLOR_NONE) {
+    if (context == 0 || position == 0 || color == COLOR_NONE) {
         return 0;
     }
 
     score = context->history[color][move.from][move.to];
     if (ply > 0 && ply <= MAX_SEARCH_PLY) {
         Move previous = context->line_moves[ply - 1];
-        if (is_valid_square(previous.to)) {
-            score += context->continuation_history[previous.to][move.to];
+        if (is_valid_square(previous.from) && is_valid_square(previous.to)) {
+            PieceType previous_type = piece_type(
+                position_piece_at(position, previous.to)
+            );
+            PieceType moving_type = piece_type(
+                position_piece_at(position, move.from)
+            );
+
+            if (previous_type != PIECE_TYPE_NONE &&
+                moving_type != PIECE_TYPE_NONE) {
+                score += context->continuation_history[previous_type][moving_type]
+                    [move.to];
+            }
         }
     }
     return score;
@@ -195,7 +225,7 @@ static int move_order_score(
         }
 
         return history_move_score(
-            context, position->side_to_move, ply, move
+            context, position, position->side_to_move, ply, move
         );
     }
 
@@ -310,6 +340,7 @@ int move_picker_next(MovePicker *picker, Move *move) {
 
 void record_quiet_cutoff(
     SearchContext *context,
+    const Position *position,
     Color color,
     int ply,
     int depth,
@@ -318,7 +349,7 @@ void record_quiet_cutoff(
     int bonus;
     int *history_score;
 
-    if (context == 0 || ply < 0 || ply >= MAX_KILLER_PLY ||
+    if (context == 0 || position == 0 || ply < 0 || ply >= MAX_KILLER_PLY ||
         (move.flags & MOVE_FLAG_CAPTURE) != 0) {
         return;
     }
@@ -347,11 +378,23 @@ void record_quiet_cutoff(
 
     if (ply > 0 && ply <= MAX_SEARCH_PLY) {
         Move previous_move = context->line_moves[ply - 1];
-        if (is_valid_square(previous_move.to)) {
-            update_history_score(
-                &context->continuation_history[previous_move.to][move.to],
-                bonus
+        if (is_valid_square(previous_move.from) &&
+            is_valid_square(previous_move.to)) {
+            PieceType previous_type = piece_type(
+                position_piece_at(position, previous_move.to)
             );
+            PieceType moving_type = piece_type(
+                position_piece_at(position, move.from)
+            );
+
+            if (previous_type != PIECE_TYPE_NONE &&
+                moving_type != PIECE_TYPE_NONE) {
+                update_continuation_history_score(
+                    &context->continuation_history[previous_type][moving_type]
+                        [move.to],
+                    bonus
+                );
+            }
         }
     }
 }

@@ -404,6 +404,23 @@ static void test_pawn_storm_and_king_pressure(void) {
            king_safety_score(&close_attack, 0));
 }
 
+static void test_major_piece_file_pressure(void) {
+    Position sheltered_king;
+    Position pressured_king;
+
+    clear_position(&sheltered_king);
+    position_set_piece(&sheltered_king, make_square(7, 6), PIECE_WHITE_KING);
+    position_set_piece(&sheltered_king, make_square(0, 0), PIECE_BLACK_KING);
+    position_set_piece(&sheltered_king, make_square(6, 6), PIECE_WHITE_PAWN);
+    position_set_piece(&sheltered_king, make_square(6, 7), PIECE_WHITE_PAWN);
+
+    pressured_king = sheltered_king;
+    position_set_piece(&pressured_king, make_square(0, 5), PIECE_BLACK_ROOK);
+
+    assert(king_safety_score(&sheltered_king, 0) >
+           king_safety_score(&pressured_king, 0));
+}
+
 static void test_evaluation_trace_matches_total(void) {
     Position position;
     EvaluationTrace trace = {};
@@ -449,6 +466,7 @@ int main(void) {
     test_trapped_minor_piece();
     test_threats_and_space();
     test_pawn_storm_and_king_pressure();
+    test_major_piece_file_pressure();
     test_evaluation_trace_matches_total();
     test_pawn_hash_tracks_blockers();
     return 0;

@@ -8,6 +8,8 @@
 #define KING_RING_ATTACK_UNIT 3
 #define KING_DANGER_QUADRATIC_DIVISOR 12
 #define MAX_KING_DANGER 180
+#define ROOK_FILE_PRESSURE 7
+#define QUEEN_FILE_PRESSURE 11
 
 static int file_has_pawn(const Position *position, int column, Color color) {
     Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
@@ -135,6 +137,43 @@ static int pawn_storm_danger(
     return danger;
 }
 
+static int major_piece_file_pressure(
+    const Position *position,
+    int king_square,
+    Color defending_color
+) {
+    Color attacking_color = opposite_color(defending_color);
+    int king_column = square_column(king_square);
+    int pressure = 0;
+    int square;
+
+    for (square = 0; square < SQUARE_COUNT; ++square) {
+        Piece piece = position_piece_at(position, square);
+        int file_distance;
+
+        if (piece_color(piece) != attacking_color) {
+            continue;
+        }
+        if (piece_type(piece) != PIECE_TYPE_ROOK &&
+            piece_type(piece) != PIECE_TYPE_QUEEN) {
+            continue;
+        }
+
+        file_distance = absolute_value(square_column(square) - king_column);
+        if (file_distance > 1 || file_has_pawn(
+                position, square_column(square), defending_color
+            )) {
+            continue;
+        }
+
+        pressure += piece_type(piece) == PIECE_TYPE_QUEEN
+            ? QUEEN_FILE_PRESSURE
+            : ROOK_FILE_PRESSURE;
+    }
+
+    return pressure;
+}
+
 static int side_king_safety_score(const Position *position, Color color) {
     int score = 0;
     int king_square = find_king_square(position, color);
@@ -179,7 +218,8 @@ static int side_king_safety_score(const Position *position, Color color) {
     }
 
     danger = king_attack_units(position, king_square, color) +
-             pawn_storm_danger(position, king_square, color);
+             pawn_storm_danger(position, king_square, color) +
+             major_piece_file_pressure(position, king_square, color);
     danger += danger * danger / KING_DANGER_QUADRATIC_DIVISOR;
     if (danger > MAX_KING_DANGER) {
         danger = MAX_KING_DANGER;

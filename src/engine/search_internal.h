@@ -45,14 +45,15 @@ typedef struct SearchContext {
     Move counter_moves[SQUARE_COUNT][SQUARE_COUNT];
     Move line_moves[MAX_SEARCH_PLY];
     int history[2][SQUARE_COUNT][SQUARE_COUNT];
-    int continuation_history[SQUARE_COUNT][SQUARE_COUNT];
+    // Previous-piece and reply-piece history.
+    short continuation_history[PIECE_TYPE_KING + 1][PIECE_TYPE_KING + 1]
+        [SQUARE_COUNT];
     int capture_history[2][PIECE_TYPE_KING + 1][SQUARE_COUNT][PIECE_TYPE_KING + 1];
     int static_evaluations[MAX_SEARCH_PLY];
     int static_evaluation_valid[MAX_SEARCH_PLY];
     uint64_t position_keys[MAX_POSITION_HISTORY];
     int position_key_count;
-    // Shared, engine-owned data. Everything else in this structure is private
-    // to one search worker.
+    // Shared engine state; the rest is worker-local.
     SearchSharedState *shared_state;
     TranspositionTableStatistics transposition_statistics;
 } SearchContext;

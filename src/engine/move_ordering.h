@@ -31,6 +31,7 @@ void order_moves(
 
 void record_quiet_cutoff(
     SearchContext *context,
+    const Position *position,
     Color color,
     int ply,
     int depth,

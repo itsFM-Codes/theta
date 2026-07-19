@@ -711,6 +711,7 @@ skip_null_cutoff:
             if (quiet_move) {
                 record_quiet_cutoff(
                     context,
+                    position,
                     position->side_to_move,
                     ply,
                     depth,
@@ -933,6 +934,7 @@ static int search_position_with_variation(
             if (quiet_move) {
                 record_quiet_cutoff(
                     context,
+                    position,
                     position->side_to_move,
                     0,
                     depth,

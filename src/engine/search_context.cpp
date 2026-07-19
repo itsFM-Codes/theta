@@ -82,7 +82,7 @@ void initialize_search_context(
 }
 
 void destroy_search_context(SearchContext *context) {
-    // SearchContext borrows shared resources and owns no dynamic memory.
+    // Context borrows shared state.
     (void)context;
 }
 

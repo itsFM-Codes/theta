@@ -144,15 +144,19 @@ int quiescence_search(
         UndoState undo;
         int tactical_move =
             (move.flags & (MOVE_FLAG_CAPTURE | MOVE_FLAG_PROMOTION)) != 0;
+        int gives_check = 0;
         int score;
 
         if (search_has_stopped(context)) {
             return 0;
         }
 
+        if (!in_check && (tactical_move || ply <= QUIESCENCE_CHECK_PLY_LIMIT)) {
+            gives_check = move_gives_check(position, move);
+        }
+
         if (!in_check && !tactical_move) {
-            if (ply > QUIESCENCE_CHECK_PLY_LIMIT ||
-                !move_gives_check(position, move)) {
+            if (ply > QUIESCENCE_CHECK_PLY_LIMIT || !gives_check) {
                 continue;
             }
 
@@ -163,6 +167,7 @@ int quiescence_search(
 
         if (!in_check && tactical_move &&
             (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
+            !gives_check &&
             stand_pat + capture_value(position, move) + DELTA_MARGIN < alpha) {
             if (context != 0) {
                 context->delta_prunes++;
@@ -172,6 +177,7 @@ int quiescence_search(
 
         if (!in_check && tactical_move &&
             (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
+            !gives_check &&
             static_exchange_evaluation(position, move) < 0) {
             if (context != 0) {
                 context->see_prunes++;
