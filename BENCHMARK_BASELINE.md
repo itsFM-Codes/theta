@@ -28,16 +28,15 @@ are a good sign, but they are not proof of playing strength by themselves.
 
 | Position | Depth | Score | Best move | Nodes |
 | --- | ---: | ---: | --- | ---: |
-| 1 | 5 | 52 | d2d4 | 6,033 |
-| 2 | 5 | -372 | e2a6 | 6,198 |
-| 3 | 5 | 5 | b5b6 | 652 |
-| 4 | 5 | 0 | e2e3 | 6,788 |
-| **Total** | | | | **19,671** |
+| 1 | 5 | 52 | g1f3 | 6,872 |
+| 2 | 5 | -372 | e2a6 | 5,253 |
+| 3 | 5 | 5 | b5b6 | 649 |
+| 4 | 5 | 0 | e2e3 | 6,138 |
+| **Total** | | | | **18,912** |
 
-This baseline was updated after the strategic-evaluation batch on 2026-07-19.
-The node count was reproduced in consecutive release runs, the tactical suite
-passed 2/2, and the new engine scored 28 wins, 23 losses, and 5 draws against
-the preserved pre-change engine across paired matches at `2+0.02` and
-`1+0.01`.
+This baseline was updated after adding quiescence transposition-table support
+on 2026-07-19. The node count was reproduced in consecutive release runs, the
+tactical suite passed 2/2, and the new engine scored 12 wins, 8 losses, and 8
+draws against the preserved pre-change engine in a paired `2+0.02` match.
 
 Elo (based on cutechess with stockfish-18): 1445

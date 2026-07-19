@@ -4,6 +4,7 @@
 #include "static_exchange.h"
 
 #include "src/chess/movegen.h"
+#include "src/chess/zobrist.h"
 #include "src/eval/evaluation.h"
 
 #define DELTA_MARGIN 200
@@ -55,9 +56,18 @@ int quiescence_search(
     SearchContext *context
 ) {
     MoveList moves;
+    Move table_move;
+    uint64_t key = 0;
+    int table_score;
     int stand_pat = 0;
     int in_check;
+    int original_alpha = alpha;
     int index;
+
+    table_move.from = NO_SQUARE;
+    table_move.to = NO_SQUARE;
+    table_move.promotion = PIECE_NONE;
+    table_move.flags = MOVE_FLAG_NONE;
 
     search_record_node(context, ply, 1);
 
@@ -73,21 +83,43 @@ int quiescence_search(
         return evaluate_position(position);
     }
 
+    if (context != 0) {
+        key = position_key(position);
+        if (probe_transposition_table(
+                &context->table, key, 0, alpha, beta, &table_score,
+                &table_move
+            )) {
+            return search_score_from_table(table_score, ply);
+        }
+    }
+
     generate_legal_moves(position, &moves);
     in_check = position_is_in_check(position);
 
     if (moves.count == 0) {
-        if (in_check) {
-            return -SEARCH_CHECKMATE + ply;
+        int score = in_check ? -SEARCH_CHECKMATE + ply : 0;
+        if (context != 0) {
+            store_transposition_table(
+                &context->table, key, 0, search_score_to_table(score, ply),
+                TRANSPOSITION_EXACT, table_move
+            );
         }
-
-        return 0;
+        if (in_check) {
+            return score;
+        }
+        return score;
     }
 
     if (!in_check) {
         stand_pat = evaluate_position(position);
 
         if (stand_pat >= beta) {
+            if (context != 0) {
+                store_transposition_table(
+                    &context->table, key, 0, search_score_to_table(beta, ply),
+                    TRANSPOSITION_LOWER_BOUND, table_move
+                );
+            }
             return beta;
         }
 
@@ -96,7 +128,7 @@ int quiescence_search(
         }
     }
 
-    order_moves(position, &moves, 0, context, ply, 0);
+    order_moves(position, &moves, 0, context, ply, &table_move);
 
     for (index = 0; index < moves.count; ++index) {
         Move move = moves.moves[index];
@@ -153,13 +185,29 @@ int quiescence_search(
         }
 
         if (score >= beta) {
+            if (context != 0) {
+                store_transposition_table(
+                    &context->table, key, 0, search_score_to_table(beta, ply),
+                    TRANSPOSITION_LOWER_BOUND, move
+                );
+            }
             return beta;
         }
 
         if (score > alpha) {
             alpha = score;
+            table_move = move;
         }
     }
 
+    if (context != 0) {
+        store_transposition_table(
+            &context->table, key, 0, search_score_to_table(alpha, ply),
+            alpha <= original_alpha
+                ? TRANSPOSITION_UPPER_BOUND
+                : TRANSPOSITION_EXACT,
+            table_move
+        );
+    }
     return alpha;
 }

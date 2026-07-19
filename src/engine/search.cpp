@@ -61,7 +61,7 @@ static int late_move_reduction(int depth, int move_index) {
     return depth < 0 || move_index < 0 ? 0 : lmr_reductions[depth][move_index];
 }
 
-static int score_to_table(int score, int ply) {
+int search_score_to_table(int score, int ply) {
     if (score > SEARCH_CHECKMATE - MAX_PRINCIPAL_VARIATION) {
         return score + ply;
     }
@@ -73,7 +73,7 @@ static int score_to_table(int score, int ply) {
     return score;
 }
 
-static int score_from_table(int score, int ply) {
+int search_score_from_table(int score, int ply) {
     if (score > SEARCH_CHECKMATE - MAX_PRINCIPAL_VARIATION) {
         return score - ply;
     }
@@ -442,7 +442,7 @@ skip_null_cutoff:
             update_variation(variation, table_move, 0);
         }
 
-        return score_from_table(table_score, ply);
+        return search_score_from_table(table_score, ply);
     }
 
     if (!is_pv_node && depth >= 5 && !in_check &&
@@ -620,7 +620,7 @@ skip_null_cutoff:
                 &context->table,
                 key,
                 depth,
-                score_to_table(beta, ply),
+                search_score_to_table(beta, ply),
                 TRANSPOSITION_LOWER_BOUND,
                 move,
                 static_score
@@ -638,7 +638,7 @@ skip_null_cutoff:
         &context->table,
         key,
         depth,
-        score_to_table(alpha, ply),
+        search_score_to_table(alpha, ply),
         alpha <= original_alpha
             ? TRANSPOSITION_UPPER_BOUND
             : TRANSPOSITION_EXACT,
@@ -702,7 +702,7 @@ static int search_position_with_variation(
             update_variation(variation, table_move, 0);
         }
 
-        return score_from_table(table_score, 0);
+        return search_score_from_table(table_score, 0);
     }
 
     generate_legal_moves(position, &moves);
@@ -824,7 +824,7 @@ static int search_position_with_variation(
                 &context->table,
                 key,
                 depth,
-                score_to_table(beta, 0),
+                search_score_to_table(beta, 0),
                 TRANSPOSITION_LOWER_BOUND,
                 move
             );
@@ -841,7 +841,7 @@ static int search_position_with_variation(
         &context->table,
         key,
         depth,
-        score_to_table(alpha, 0),
+        search_score_to_table(alpha, 0),
         alpha <= original_alpha
             ? TRANSPOSITION_UPPER_BOUND
             : TRANSPOSITION_EXACT,

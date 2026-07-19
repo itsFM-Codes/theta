@@ -70,6 +70,8 @@ int search_is_draw(const SearchContext *context, const Position *position);
 int position_has_insufficient_material(const Position *position);
 
 int position_is_in_check(const Position *position);
+int search_score_to_table(int score, int ply);
+int search_score_from_table(int score, int ply);
 
 void clear_variation(PrincipalVariation *variation);
 void update_variation(
