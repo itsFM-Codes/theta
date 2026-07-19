@@ -1,19 +1,53 @@
 #include "uci.h"
 
+#include <atomic>
 #include <ctype.h>
 #include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <mutex>
+#include <thread>
+#endif
 
 #include "src/chess/fen.h"
 #include "src/chess/movegen.h"
+#include "src/chess/zobrist.h"
 #include "src/config/config.h"
 #include "src/engine/search.h"
 
 #define UCI_LINE_SIZE 4096
 #define UCI_FEN_SIZE 256
 #define UCI_MOVE_OVERHEAD_MS 10
+
+#ifdef _WIN32
+class UciMutex {
+public:
+    UciMutex() { InitializeCriticalSection(&section); }
+    ~UciMutex() { DeleteCriticalSection(&section); }
+    void lock() { EnterCriticalSection(&section); }
+    void unlock() { LeaveCriticalSection(&section); }
+private:
+    CRITICAL_SECTION section;
+};
+#else
+typedef std::mutex UciMutex;
+#endif
+
+class UciLock {
+public:
+    explicit UciLock(UciMutex &mutex) : mutex_(mutex) { mutex_.lock(); }
+    ~UciLock() { mutex_.unlock(); }
+private:
+    UciMutex &mutex_;
+};
+
+static UciMutex uci_output_mutex;
 
 static void print_uci_move(Move move) {
     char promotion = '\0';
@@ -141,13 +175,17 @@ static char *next_token(char **cursor) {
     return start;
 }
 
-static int set_position_from_command(Position *position, char *arguments) {
+static int set_position_from_command(
+    Position *position,
+    std::vector<uint64_t> *history,
+    char *arguments
+) {
     char fen[UCI_FEN_SIZE];
     char *cursor = arguments;
     char *token = next_token(&cursor);
     int field;
 
-    if (token == 0 || position == 0) {
+    if (token == 0 || position == 0 || history == 0) {
         return 0;
     }
 
@@ -181,6 +219,9 @@ static int set_position_from_command(Position *position, char *arguments) {
         return 0;
     }
 
+    history->clear();
+    history->push_back(position_key(position));
+
     if (token == 0) {
         return 1;
     }
@@ -193,6 +234,7 @@ static int set_position_from_command(Position *position, char *arguments) {
         if (!apply_uci_move(position, token)) {
             return 0;
         }
+        history->push_back(position_key(position));
     }
 
     return 1;
@@ -226,7 +268,10 @@ static void print_search_info(
     int index;
     uint64_t nps = 0;
 
-    (void)user_data;
+    UciMutex *output_mutex = (UciMutex *)user_data;
+    UciLock lock(
+        output_mutex == 0 ? uci_output_mutex : *output_mutex
+    );
     if (statistics != 0 && statistics->elapsed_ms > 0) {
         nps = statistics->nodes * 1000u / (uint64_t)statistics->elapsed_ms;
     }
@@ -256,7 +301,12 @@ static void print_search_info(
     fflush(stdout);
 }
 
-static void search_from_command(Position *position, char *arguments) {
+static void search_from_command(
+    Position position,
+    const std::vector<uint64_t> &history,
+    char *arguments,
+    std::atomic<bool> *stop_requested
+) {
     char *cursor = arguments;
     char *token;
     Move best_move;
@@ -269,8 +319,10 @@ static void search_from_command(Position *position, char *arguments) {
     int white_increment = 0;
     int black_increment = 0;
     int moves_to_go = 0;
+    int infinite = 0;
     uint64_t node_limit = 0;
     int value;
+    SearchLimits limits = {};
 
     while ((token = next_token(&cursor)) != 0) {
         if (strcmp(token, "depth") == 0) {
@@ -305,47 +357,72 @@ static void search_from_command(Position *position, char *arguments) {
             if (parse_non_negative(token, &value)) {
                 node_limit = (uint64_t)value;
             }
+        } else if (strcmp(token, "infinite") == 0) {
+            infinite = 1;
         }
     }
 
-    if (depth > g_config.max_depth) {
+    if (infinite) {
+        depth = 128;
+        time_limit_ms = 0;
+    } else if (depth > g_config.max_depth) {
         depth = g_config.max_depth;
     }
 
-    if (time_limit_ms == 0) {
-        int remaining_time = position->side_to_move == COLOR_WHITE
+    limits.soft_time_ms = time_limit_ms;
+    limits.hard_time_ms = time_limit_ms;
+
+    if (!infinite && time_limit_ms == 0) {
+        int remaining_time = position.side_to_move == COLOR_WHITE
             ? white_time
             : black_time;
-        int increment = position->side_to_move == COLOR_WHITE
+        int increment = position.side_to_move == COLOR_WHITE
             ? white_increment
             : black_increment;
 
         if (remaining_time > 0) {
             int divisor = moves_to_go > 0 ? moves_to_go : 30;
-            int hard_limit = remaining_time - UCI_MOVE_OVERHEAD_MS;
+            int available_time = remaining_time - UCI_MOVE_OVERHEAD_MS;
 
-            time_limit_ms = remaining_time / divisor + increment / 2;
-            if (time_limit_ms > hard_limit) {
-                time_limit_ms = hard_limit;
+            if (available_time < 1) {
+                available_time = 1;
             }
-
-            if (time_limit_ms < 10) {
-                time_limit_ms = hard_limit > 0 ? hard_limit : 1;
+            limits.soft_time_ms = remaining_time / divisor +
+                increment * 3 / 4;
+            if (limits.soft_time_ms < 1) {
+                limits.soft_time_ms = 1;
+            }
+            if (limits.soft_time_ms > available_time) {
+                limits.soft_time_ms = available_time;
+            }
+            limits.hard_time_ms = limits.soft_time_ms * 3;
+            if (limits.hard_time_ms < limits.soft_time_ms + increment) {
+                limits.hard_time_ms = limits.soft_time_ms + increment;
+            }
+            if (limits.hard_time_ms > available_time) {
+                limits.hard_time_ms = available_time;
             }
         }
     }
 
-    search_iterative_with_callback_and_node_limit(
-        position,
+    limits.node_limit = node_limit;
+    limits.poll_interval = DEFAULT_SEARCH_POLL_INTERVAL;
+    limits.stop_requested = stop_requested;
+    limits.game_history = history.empty() ? 0 : history.data();
+    limits.game_history_count = (int)history.size();
+
+    search_iterative_with_limits(
+        &position,
         depth,
-        time_limit_ms,
-        node_limit,
+        &limits,
         &best_move,
         &variation,
         &completed_depth,
         print_search_info,
-        0
+        &uci_output_mutex
     );
+
+    UciLock lock(uci_output_mutex);
     printf("bestmove ");
 
     if (is_valid_square(best_move.from) && is_valid_square(best_move.to)) {
@@ -358,11 +435,63 @@ static void search_from_command(Position *position, char *arguments) {
     fflush(stdout);
 }
 
+typedef struct UciSearchTask {
+    Position position;
+    std::vector<uint64_t> history;
+    std::string arguments;
+    std::atomic<bool> *stop_requested;
+} UciSearchTask;
+
+static void execute_search_task(UciSearchTask *task) {
+    std::vector<char> mutable_arguments(
+        task->arguments.begin(),
+        task->arguments.end()
+    );
+    mutable_arguments.push_back('\0');
+    search_from_command(
+        task->position,
+        task->history,
+        mutable_arguments.data(),
+        task->stop_requested
+    );
+    delete task;
+}
+
+#ifdef _WIN32
+static DWORD WINAPI uci_search_thread_proc(LPVOID data) {
+    execute_search_task((UciSearchTask *)data);
+    return 0;
+}
+#endif
+
 int run_uci(void) {
     Position position;
+    std::vector<uint64_t> position_history;
+#ifdef _WIN32
+    HANDLE search_thread = 0;
+#else
+    std::thread search_thread;
+#endif
+    std::atomic<bool> stop_requested(false);
     char line[UCI_LINE_SIZE];
 
     set_starting_position(&position);
+    position_history.push_back(position_key(&position));
+
+    auto stop_search = [&]() {
+        stop_requested.store(true, std::memory_order_relaxed);
+#ifdef _WIN32
+        if (search_thread != 0) {
+            WaitForSingleObject(search_thread, INFINITE);
+            CloseHandle(search_thread);
+            search_thread = 0;
+        }
+#else
+        if (search_thread.joinable()) {
+            search_thread.join();
+        }
+#endif
+    };
 
     while (fgets(line, sizeof(line), stdin) != 0) {
         char *arguments;
@@ -381,25 +510,60 @@ int run_uci(void) {
         }
 
         if (strcmp(arguments, "uci") == 0) {
+            UciLock lock(uci_output_mutex);
             printf("id name Theta\n");
             printf("id author FM\n");
             printf("uciok\n");
             fflush(stdout);
         } else if (strcmp(arguments, "isready") == 0) {
+            UciLock lock(uci_output_mutex);
             printf("readyok\n");
             fflush(stdout);
         } else if (strcmp(arguments, "ucinewgame") == 0) {
+            stop_search();
             set_starting_position(&position);
+            position_history.clear();
+            position_history.push_back(position_key(&position));
         } else if (strncmp(arguments, "position ", 9) == 0) {
-            set_position_from_command(&position, arguments + 9);
+            stop_search();
+            set_position_from_command(
+                &position,
+                &position_history,
+                arguments + 9
+            );
         } else if (strncmp(arguments, "go", 2) == 0 &&
                    (arguments[2] == '\0' || arguments[2] == ' ' ||
                     arguments[2] == '\t')) {
-            search_from_command(&position, arguments + 2);
+            stop_search();
+            stop_requested.store(false, std::memory_order_relaxed);
+            UciSearchTask *task = new UciSearchTask;
+            task->position = position;
+            task->history = position_history;
+            task->arguments = arguments + 2;
+            task->stop_requested = &stop_requested;
+#ifdef _WIN32
+            search_thread = CreateThread(
+                0,
+                0,
+                uci_search_thread_proc,
+                task,
+                0,
+                0
+            );
+            if (search_thread == 0) {
+                execute_search_task(task);
+            }
+#else
+            search_thread = std::thread(execute_search_task, task);
+#endif
+        } else if (strcmp(arguments, "stop") == 0) {
+            stop_search();
         } else if (strcmp(arguments, "quit") == 0) {
+            stop_search();
             return 1;
         }
     }
 
+    stop_search();
     return 1;
 }

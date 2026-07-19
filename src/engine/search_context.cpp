@@ -18,10 +18,13 @@ void initialize_search_context(SearchContext *context, int time_limit_ms) {
     int to;
 
     context->start_time = std::chrono::steady_clock::now();
-    context->time_limit_ms = time_limit_ms;
+    context->hard_time_limit_ms = time_limit_ms;
     context->stopped = 0;
+    context->stop_requested = 0;
     context->nodes = 0;
     context->node_limit = 0;
+    context->poll_interval = DEFAULT_SEARCH_POLL_INTERVAL;
+    context->next_poll_node = 0;
     context->quiescence_nodes = 0;
     context->beta_cutoffs = 0;
     context->first_move_beta_cutoffs = 0;
@@ -80,13 +83,24 @@ int search_has_stopped(SearchContext *context) {
         return 1;
     }
 
-    if (context->time_limit_ms <= 0) {
+    if (context->nodes < context->next_poll_node) {
+        return 0;
+    }
+
+    context->next_poll_node = context->nodes + context->poll_interval;
+
+    if (context->stop_requested != 0 &&
+        context->stop_requested->load(std::memory_order_relaxed)) {
+        context->stopped = 1;
+        return 1;
+    }
+
+    if (context->hard_time_limit_ms <= 0) {
         return 0;
     }
 
     elapsed = search_elapsed_ms(context);
-
-    if (elapsed >= context->time_limit_ms) {
+    if (elapsed >= context->hard_time_limit_ms) {
         context->stopped = 1;
         return 1;
     }
@@ -110,7 +124,7 @@ void search_record_node(SearchContext *context, int ply, int is_quiescence) {
     }
 
     context->nodes++;
-    if (context->node_limit > 0 && context->nodes > context->node_limit) {
+    if (context->node_limit > 0 && context->nodes >= context->node_limit) {
         context->stopped = 1;
     }
     if (is_quiescence) {
@@ -125,6 +139,46 @@ void search_set_node_limit(SearchContext *context, uint64_t node_limit) {
     if (context != 0) {
         context->node_limit = node_limit;
     }
+}
+
+void search_set_limits(SearchContext *context, const SearchLimits *limits) {
+    if (context == 0 || limits == 0) {
+        return;
+    }
+
+    context->hard_time_limit_ms = limits->hard_time_ms;
+    context->node_limit = limits->node_limit;
+    context->poll_interval = limits->poll_interval > 0
+        ? limits->poll_interval
+        : DEFAULT_SEARCH_POLL_INTERVAL;
+    context->stop_requested = limits->stop_requested;
+}
+
+void search_set_position_history(
+    SearchContext *context,
+    const uint64_t *keys,
+    int count
+) {
+    int index;
+
+    if (context == 0) {
+        return;
+    }
+
+    context->position_key_count = 0;
+    if (keys == 0 || count <= 0) {
+        return;
+    }
+
+    if (count > MAX_POSITION_HISTORY - MAX_SEARCH_PLY) {
+        keys += count - (MAX_POSITION_HISTORY - MAX_SEARCH_PLY);
+        count = MAX_POSITION_HISTORY - MAX_SEARCH_PLY;
+    }
+
+    for (index = 0; index < count; ++index) {
+        context->position_keys[index] = keys[index];
+    }
+    context->position_key_count = count;
 }
 
 void search_get_statistics(
@@ -187,7 +241,7 @@ void search_get_statistics(
 
 int search_push_position(SearchContext *context, const Position *position) {
     if (context == 0 || position == 0 ||
-        context->position_key_count >= MAX_SEARCH_PLY) {
+        context->position_key_count >= MAX_POSITION_HISTORY) {
         return 0;
     }
 
@@ -205,6 +259,7 @@ void search_pop_position(SearchContext *context) {
 int search_is_draw(const SearchContext *context, const Position *position) {
     uint64_t key;
     int matches = 0;
+    int first_index;
     int index;
 
     if (position == 0) {
@@ -225,13 +280,20 @@ int search_is_draw(const SearchContext *context, const Position *position) {
 
     key = position_key(position);
 
-    for (index = 0; index < context->position_key_count - 1; ++index) {
+    first_index = context->position_key_count - 1 - position->halfmove_clock;
+    if (first_index < 0) {
+        first_index = 0;
+    }
+
+    for (index = context->position_key_count - 1;
+         index >= first_index;
+         --index) {
         if (context->position_keys[index] == key) {
             ++matches;
         }
     }
 
-    return matches >= 2;
+    return matches >= 3;
 }
 
 int position_has_insufficient_material(const Position *position) {

@@ -3,4 +3,6 @@ build/
 
 # Local engine downloads and generated Cute Chess match artifacts.
 test/stockfish-*.exe
+test/cutechess-*.zip
+test/cutechess-*-win64/
 test/results/

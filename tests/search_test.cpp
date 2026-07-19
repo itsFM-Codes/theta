@@ -153,6 +153,34 @@ static void test_quiescence_considers_quiet_checks(void) {
     destroy_search_context(&context);
 }
 
+static void test_quiescence_searches_quiet_check_evasion(void) {
+    Position position;
+    SearchContext context;
+    MoveList moves;
+    int score;
+
+    assert(position_from_fen(
+        &position,
+        "r7/8/8/8/8/2k5/8/KB6 w - - 0 1"
+    ));
+    generate_legal_moves(&position, &moves);
+    assert(moves.count == 1);
+    assert(moves.moves[0].from == make_square(7, 1));
+    assert(moves.moves[0].to == make_square(6, 0));
+
+    initialize_search_context(&context, 0);
+    assert(search_push_position(&context, &position));
+    score = quiescence_search(
+        &position,
+        -SEARCH_INFINITY,
+        SEARCH_INFINITY,
+        0,
+        &context
+    );
+    assert(score > -SEARCH_CHECKMATE + MAX_PRINCIPAL_VARIATION);
+    destroy_search_context(&context);
+}
+
 static void test_search_returns_a_legal_move(void) {
     Position position;
     Move best_move;
@@ -198,12 +226,54 @@ static void test_threefold_repetition_detection(void) {
     SearchContext context;
 
     set_starting_position(&position);
+    position.halfmove_clock = 4;
     initialize_search_context(&context, 0);
     assert(search_push_position(&context, &position));
     assert(search_push_position(&context, &position));
     assert(search_push_position(&context, &position));
     assert(search_is_draw(&context, &position));
     destroy_search_context(&context);
+}
+
+static void test_repetition_scan_stops_at_irreversible_move(void) {
+    Position position;
+    SearchContext context;
+
+    set_starting_position(&position);
+    initialize_search_context(&context, 0);
+    assert(search_push_position(&context, &position));
+    assert(search_push_position(&context, &position));
+    assert(search_push_position(&context, &position));
+    assert(!search_is_draw(&context, &position));
+    destroy_search_context(&context);
+}
+
+static void test_external_stop_returns_a_legal_fallback(void) {
+    Position position;
+    Move best_move;
+    UndoState undo;
+    PrincipalVariation variation;
+    SearchLimits limits = {};
+    std::atomic<bool> stop_requested(true);
+    int completed_depth;
+
+    set_starting_position(&position);
+    limits.stop_requested = &stop_requested;
+    limits.poll_interval = 1;
+    search_iterative_with_limits(
+        &position,
+        20,
+        &limits,
+        &best_move,
+        &variation,
+        &completed_depth,
+        0,
+        0
+    );
+
+    assert(completed_depth == 0);
+    assert(make_move(&position, best_move, &undo));
+    undo_move(&position, best_move, &undo);
 }
 
 static void test_insufficient_material_draw(void) {
@@ -322,10 +392,13 @@ int main(void) {
     test_quiescence_sees_a_recapture();
     test_quiescence_keeps_starting_position_equal();
     test_quiescence_considers_quiet_checks();
+    test_quiescence_searches_quiet_check_evasion();
     test_search_returns_a_legal_move();
     test_search_restores_material();
     test_fifty_move_draw();
     test_threefold_repetition_detection();
+    test_repetition_scan_stops_at_irreversible_move();
+    test_external_stop_returns_a_legal_fallback();
     test_insufficient_material_draw();
     test_search_reports_statistics();
     test_node_limited_search_returns_a_legal_move();

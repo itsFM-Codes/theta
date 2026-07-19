@@ -8,13 +8,17 @@
 
 #define MAX_KILLER_PLY 64
 #define MAX_SEARCH_PLY 128
+#define MAX_POSITION_HISTORY 2048
 
 typedef struct SearchContext {
     std::chrono::steady_clock::time_point start_time;
-    int time_limit_ms;
+    int hard_time_limit_ms;
     int stopped;
+    std::atomic<bool> *stop_requested;
     uint64_t nodes;
     uint64_t node_limit;
+    uint64_t poll_interval;
+    uint64_t next_poll_node;
     uint64_t quiescence_nodes;
     uint64_t beta_cutoffs;
     uint64_t first_move_beta_cutoffs;
@@ -39,7 +43,7 @@ typedef struct SearchContext {
     int capture_history[2][PIECE_TYPE_KING + 1][SQUARE_COUNT][PIECE_TYPE_KING + 1];
     int static_evaluations[MAX_SEARCH_PLY];
     int static_evaluation_valid[MAX_SEARCH_PLY];
-    uint64_t position_keys[MAX_SEARCH_PLY];
+    uint64_t position_keys[MAX_POSITION_HISTORY];
     int position_key_count;
     TranspositionTable table;
 } SearchContext;
@@ -50,6 +54,12 @@ int search_has_stopped(SearchContext *context);
 int search_elapsed_ms(const SearchContext *context);
 void search_record_node(SearchContext *context, int ply, int is_quiescence);
 void search_set_node_limit(SearchContext *context, uint64_t node_limit);
+void search_set_limits(SearchContext *context, const SearchLimits *limits);
+void search_set_position_history(
+    SearchContext *context,
+    const uint64_t *keys,
+    int count
+);
 void search_get_statistics(
     const SearchContext *context,
     SearchStatistics *statistics

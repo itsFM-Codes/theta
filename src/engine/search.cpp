@@ -895,13 +895,57 @@ int search_iterative_with_callback_and_node_limit(
     SearchInfoCallback callback,
     void *user_data
 ) {
+    SearchLimits limits = {};
+
+    limits.soft_time_ms = time_limit_ms;
+    limits.hard_time_ms = time_limit_ms;
+    limits.node_limit = node_limit;
+    limits.poll_interval = DEFAULT_SEARCH_POLL_INTERVAL;
+    return search_iterative_with_limits(
+        position,
+        maximum_depth,
+        &limits,
+        best_move,
+        variation,
+        completed_depth,
+        callback,
+        user_data
+    );
+}
+
+static int moves_are_equal(Move first, Move second) {
+    return first.from == second.from &&
+           first.to == second.to &&
+           first.promotion == second.promotion &&
+           first.flags == second.flags;
+}
+
+int search_iterative_with_limits(
+    Position *position,
+    int maximum_depth,
+    const SearchLimits *limits,
+    Move *best_move,
+    PrincipalVariation *variation,
+    int *completed_depth,
+    SearchInfoCallback callback,
+    void *user_data
+) {
     Move move;
+    Move previous_best_move;
     PrincipalVariation current_variation;
     SearchContext context;
     int depth;
     int score = 0;
     int completed_score;
     int last_score_delta = 0;
+    int previous_iteration_ms = 0;
+    int stable_best_move_count = 0;
+    int soft_time_limit_ms = limits == 0 ? 0 : limits->soft_time_ms;
+
+    previous_best_move.from = NO_SQUARE;
+    previous_best_move.to = NO_SQUARE;
+    previous_best_move.promotion = PIECE_NONE;
+    previous_best_move.flags = MOVE_FLAG_NONE;
 
     if (best_move != 0) {
         best_move->from = NO_SQUARE;
@@ -924,10 +968,21 @@ int search_iterative_with_callback_and_node_limit(
         return evaluate_position(position);
     }
 
-    initialize_search_context(&context, time_limit_ms);
+    initialize_search_context(&context, limits == 0 ? 0 : limits->hard_time_ms);
     initialize_lmr_reductions();
-    search_set_node_limit(&context, node_limit);
-    search_push_position(&context, position);
+    search_set_limits(&context, limits);
+    if (limits != 0) {
+        search_set_position_history(
+            &context,
+            limits->game_history,
+            limits->game_history_count
+        );
+    }
+    if (context.position_key_count == 0 ||
+        context.position_keys[context.position_key_count - 1] !=
+            position_key(position)) {
+        search_push_position(&context, position);
+    }
 
     if (best_move != 0) {
         MoveList legal_moves;
@@ -941,6 +996,7 @@ int search_iterative_with_callback_and_node_limit(
     completed_score = evaluate_position(position);
 
     for (depth = 1; depth <= maximum_depth; ++depth) {
+        int iteration_start_ms = search_elapsed_ms(&context);
         int alpha = -SEARCH_INFINITY;
         int beta = SEARCH_INFINITY;
 
@@ -993,6 +1049,13 @@ int search_iterative_with_callback_and_node_limit(
         if (current_variation.count > 0) {
             move = current_variation.moves[0];
 
+            if (moves_are_equal(move, previous_best_move)) {
+                stable_best_move_count++;
+            } else {
+                stable_best_move_count = 0;
+            }
+            previous_best_move = move;
+
             if (best_move != 0) {
                 *best_move = move;
             }
@@ -1013,9 +1076,34 @@ int search_iterative_with_callback_and_node_limit(
             callback(depth, score, &current_variation, &statistics, user_data);
         }
 
-        if (time_limit_ms > 0 &&
-            search_elapsed_ms(&context) * 4 >= time_limit_ms * 3) {
-            break;
+        previous_iteration_ms = search_elapsed_ms(&context) - iteration_start_ms;
+
+        if (soft_time_limit_ms > 0) {
+            int elapsed_ms = search_elapsed_ms(&context);
+            int allocated_ms = soft_time_limit_ms;
+            int hard_time_limit_ms = limits == 0 ? 0 : limits->hard_time_ms;
+            int estimated_next_iteration_ms = previous_iteration_ms > 0
+                ? previous_iteration_ms * 2
+                : 1;
+
+            if (stable_best_move_count == 0) {
+                allocated_ms += soft_time_limit_ms / 2;
+            } else if (stable_best_move_count == 1) {
+                allocated_ms += soft_time_limit_ms / 4;
+            }
+            if (last_score_delta > 100) {
+                allocated_ms += soft_time_limit_ms / 2;
+            } else if (last_score_delta > 40) {
+                allocated_ms += soft_time_limit_ms / 4;
+            }
+            if (hard_time_limit_ms > 0 && allocated_ms > hard_time_limit_ms) {
+                allocated_ms = hard_time_limit_ms;
+            }
+
+            if (elapsed_ms >= allocated_ms ||
+                elapsed_ms + estimated_next_iteration_ms > allocated_ms) {
+                break;
+            }
         }
     }
 

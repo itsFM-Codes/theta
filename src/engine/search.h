@@ -1,12 +1,15 @@
 #ifndef SEARCH_H
 #define SEARCH_H
 
+#include <atomic>
+
 #include "src/chess/move.h"
 #include "src/chess/position.h"
 
 #define SEARCH_INFINITY 30000
 #define SEARCH_CHECKMATE 29000
 #define MAX_PRINCIPAL_VARIATION 64
+#define DEFAULT_SEARCH_POLL_INTERVAL 64
 
 typedef struct PrincipalVariation {
     Move moves[MAX_PRINCIPAL_VARIATION];
@@ -48,6 +51,16 @@ typedef void (*SearchInfoCallback)(
     void *user_data
 );
 
+typedef struct SearchLimits {
+    int soft_time_ms;
+    int hard_time_ms;
+    uint64_t node_limit;
+    uint64_t poll_interval;
+    std::atomic<bool> *stop_requested;
+    const uint64_t *game_history;
+    int game_history_count;
+} SearchLimits;
+
 int search_position(Position *position, int depth, Move *best_move);
 int search_iterative(
     Position *position,
@@ -72,6 +85,16 @@ int search_iterative_with_callback_and_node_limit(
     int maximum_depth,
     int time_limit_ms,
     uint64_t node_limit,
+    Move *best_move,
+    PrincipalVariation *variation,
+    int *completed_depth,
+    SearchInfoCallback callback,
+    void *user_data
+);
+int search_iterative_with_limits(
+    Position *position,
+    int maximum_depth,
+    const SearchLimits *limits,
     Move *best_move,
     PrincipalVariation *variation,
     int *completed_depth,

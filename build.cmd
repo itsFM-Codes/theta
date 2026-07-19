@@ -172,6 +172,11 @@ echo [BUILD] theta
 %CXX% %CXXFLAGS% main.cpp !ENGINE_SOURCES! -o build\theta.exe
 if errorlevel 1 exit /b 1
 
+echo [TEST]  uci_protocol_test
+powershell -NoProfile -ExecutionPolicy Bypass ^
+    -File tests\uci_protocol_test.ps1 build\theta.exe
+if errorlevel 1 exit /b 1
+
 echo.
 echo All tests passed.
 echo Engine: build\theta.exe
