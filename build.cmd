@@ -92,12 +92,15 @@ echo [BUILD] evaluation_test
     tests\evaluation_test.cpp ^
     src\chess\board.cpp ^
     src\chess\position.cpp ^
+    src\chess\move.cpp ^
+    src\chess\movegen.cpp ^
     src\eval\evaluation.cpp ^
     src\eval\king_safety.cpp ^
     src\eval\mobility.cpp ^
     src\eval\pawn_structure.cpp ^
     src\eval\piece_activity.cpp ^
     src\eval\piece_square_tables.cpp ^
+    src\eval\strategic.cpp ^
     -o build\evaluation_test.exe
 if errorlevel 1 exit /b 1
 
@@ -156,6 +159,7 @@ echo [BUILD] search_test
     src\eval\pawn_structure.cpp ^
     src\eval\piece_activity.cpp ^
     src\eval\piece_square_tables.cpp ^
+    src\eval\strategic.cpp ^
     -o build\search_test.exe
 if errorlevel 1 exit /b 1
 

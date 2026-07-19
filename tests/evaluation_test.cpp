@@ -6,6 +6,7 @@
 #include "src/eval/pawn_structure.h"
 #include "src/eval/piece_activity.h"
 #include "src/eval/piece_square_tables.h"
+#include "src/eval/strategic.h"
 
 static void test_starting_position(void) {
     Position position;
@@ -279,8 +280,11 @@ static void test_piece_activity(void) {
     clear_position(&single_bishop);
     position_set_piece(&single_bishop, make_square(7, 2), PIECE_WHITE_BISHOP);
 
-    assert(piece_activity_score(&bishop_pair) >
-           piece_activity_score(&single_bishop));
+    assert(piece_activity_score(&bishop_pair, 0) >
+           piece_activity_score(&single_bishop, 0));
+    assert(piece_activity_score(&bishop_pair, 256) >
+           piece_activity_score(&bishop_pair, 0));
+
 
     clear_position(&open_file_rook);
     position_set_piece(&open_file_rook, make_square(7, 3), PIECE_WHITE_ROOK);
@@ -289,8 +293,8 @@ static void test_piece_activity(void) {
     position_set_piece(&blocked_rook, make_square(7, 3), PIECE_WHITE_ROOK);
     position_set_piece(&blocked_rook, make_square(6, 3), PIECE_WHITE_PAWN);
 
-    assert(piece_activity_score(&open_file_rook) >
-           piece_activity_score(&blocked_rook));
+    assert(piece_activity_score(&open_file_rook, 0) >
+           piece_activity_score(&blocked_rook, 0));
 
     clear_position(&seventh_rank_rook);
     position_set_piece(
@@ -306,8 +310,8 @@ static void test_piece_activity(void) {
         PIECE_WHITE_ROOK
     );
 
-    assert(piece_activity_score(&seventh_rank_rook) >
-           piece_activity_score(&middle_rank_rook));
+    assert(piece_activity_score(&seventh_rank_rook, 0) >
+           piece_activity_score(&middle_rank_rook, 0));
 
     clear_position(&knight_outpost);
     position_set_piece(&knight_outpost, make_square(3, 3), PIECE_WHITE_KNIGHT);
@@ -316,8 +320,8 @@ static void test_piece_activity(void) {
     clear_position(&ordinary_knight);
     position_set_piece(&ordinary_knight, make_square(3, 3), PIECE_WHITE_KNIGHT);
 
-    assert(piece_activity_score(&knight_outpost) >
-           piece_activity_score(&ordinary_knight));
+    assert(piece_activity_score(&knight_outpost, 0) >
+           piece_activity_score(&ordinary_knight, 0));
 
     clear_position(&good_bishop);
     position_set_piece(&good_bishop, make_square(7, 2), PIECE_WHITE_BISHOP);
@@ -329,8 +333,75 @@ static void test_piece_activity(void) {
     position_set_piece(&bad_bishop, make_square(5, 4), PIECE_WHITE_PAWN);
     position_set_piece(&bad_bishop, make_square(4, 5), PIECE_WHITE_PAWN);
 
-    assert(piece_activity_score(&good_bishop) >
-           piece_activity_score(&bad_bishop));
+    assert(piece_activity_score(&good_bishop, 0) >
+           piece_activity_score(&bad_bishop, 0));
+}
+
+static void test_trapped_minor_piece(void) {
+    Position trapped_knight;
+    Position active_knight;
+
+    clear_position(&trapped_knight);
+    position_set_piece(&trapped_knight, make_square(7, 0), PIECE_WHITE_KNIGHT);
+    position_set_piece(&trapped_knight, make_square(5, 1), PIECE_WHITE_PAWN);
+    position_set_piece(&trapped_knight, make_square(6, 2), PIECE_WHITE_PAWN);
+
+    clear_position(&active_knight);
+    position_set_piece(&active_knight, make_square(5, 2), PIECE_WHITE_KNIGHT);
+
+    assert(piece_activity_score(&active_knight, 0) >
+           piece_activity_score(&trapped_knight, 0));
+}
+
+static void test_threats_and_space(void) {
+    Position pawn_threat;
+    Position no_threat;
+    Position advanced_space;
+    Position home_space;
+
+    clear_position(&pawn_threat);
+    position_set_piece(&pawn_threat, make_square(4, 3), PIECE_WHITE_PAWN);
+    position_set_piece(&pawn_threat, make_square(3, 4), PIECE_BLACK_QUEEN);
+
+    clear_position(&no_threat);
+    position_set_piece(&no_threat, make_square(4, 3), PIECE_WHITE_PAWN);
+    position_set_piece(&no_threat, make_square(2, 4), PIECE_BLACK_QUEEN);
+    assert(threat_score(&pawn_threat) > threat_score(&no_threat));
+
+    clear_position(&advanced_space);
+    position_set_piece(&advanced_space, make_square(4, 3), PIECE_WHITE_PAWN);
+    position_set_piece(&advanced_space, make_square(4, 4), PIECE_WHITE_PAWN);
+
+    clear_position(&home_space);
+    position_set_piece(&home_space, make_square(6, 3), PIECE_WHITE_PAWN);
+    position_set_piece(&home_space, make_square(6, 4), PIECE_WHITE_PAWN);
+    assert(space_score(&advanced_space) > space_score(&home_space));
+}
+
+static void test_pawn_storm_and_king_pressure(void) {
+    Position distant_attack;
+    Position close_attack;
+
+    clear_position(&distant_attack);
+    position_set_piece(&distant_attack, make_square(7, 6), PIECE_WHITE_KING);
+    position_set_piece(&distant_attack, make_square(0, 0), PIECE_BLACK_KING);
+    position_set_piece(&distant_attack, make_square(1, 5), PIECE_BLACK_PAWN);
+    position_set_piece(&distant_attack, make_square(1, 6), PIECE_BLACK_PAWN);
+    position_set_piece(&distant_attack, make_square(1, 7), PIECE_BLACK_PAWN);
+    position_set_piece(&distant_attack, make_square(0, 1), PIECE_BLACK_QUEEN);
+
+    close_attack = distant_attack;
+    position_set_piece(&close_attack, make_square(1, 5), PIECE_NONE);
+    position_set_piece(&close_attack, make_square(1, 6), PIECE_NONE);
+    position_set_piece(&close_attack, make_square(1, 7), PIECE_NONE);
+    position_set_piece(&close_attack, make_square(0, 1), PIECE_NONE);
+    position_set_piece(&close_attack, make_square(4, 5), PIECE_BLACK_PAWN);
+    position_set_piece(&close_attack, make_square(4, 6), PIECE_BLACK_PAWN);
+    position_set_piece(&close_attack, make_square(4, 7), PIECE_BLACK_PAWN);
+    position_set_piece(&close_attack, make_square(5, 6), PIECE_BLACK_QUEEN);
+
+    assert(king_safety_score(&distant_attack, 0) >
+           king_safety_score(&close_attack, 0));
 }
 
 int main(void) {
@@ -343,5 +414,8 @@ int main(void) {
     test_pawn_structure();
     test_king_safety();
     test_piece_activity();
+    test_trapped_minor_piece();
+    test_threats_and_space();
+    test_pawn_storm_and_king_pressure();
     return 0;
 }

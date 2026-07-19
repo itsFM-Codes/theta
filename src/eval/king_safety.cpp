@@ -1,8 +1,13 @@
 #include "king_safety.h"
 
+#include "src/chess/movegen.h"
+
 #define PAWN_SHIELD_BONUS 12
 #define SEMI_OPEN_FILE_PENALTY 10
 #define OPEN_FILE_PENALTY 5
+#define KING_RING_ATTACK_UNIT 3
+#define KING_DANGER_QUADRATIC_DIVISOR 12
+#define MAX_KING_DANGER 180
 
 static int file_has_pawn(const Position *position, int column, Color color) {
     Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
@@ -30,6 +35,106 @@ static int find_king_square(const Position *position, Color color) {
     return NO_SQUARE;
 }
 
+static int absolute_value(int value) {
+    return value < 0 ? -value : value;
+}
+
+static int square_distance(int first, int second) {
+    int row_distance = absolute_value(square_row(first) - square_row(second));
+    int column_distance = absolute_value(
+        square_column(first) - square_column(second)
+    );
+    return row_distance > column_distance ? row_distance : column_distance;
+}
+
+static int king_attack_units(
+    const Position *position,
+    int king_square,
+    Color defending_color
+) {
+    Color attacking_color = opposite_color(defending_color);
+    int king_row = square_row(king_square);
+    int king_column = square_column(king_square);
+    int units = 0;
+    int row;
+    int column;
+    int square;
+
+    for (row = king_row - 1; row <= king_row + 1; ++row) {
+        for (column = king_column - 1; column <= king_column + 1; ++column) {
+            int ring_square;
+            if (!is_valid_coordinate(row, column) ||
+                (row == king_row && column == king_column)) {
+                continue;
+            }
+            ring_square = make_square(row, column);
+            if (is_square_attacked(position, ring_square, attacking_color)) {
+                units += KING_RING_ATTACK_UNIT;
+            }
+        }
+    }
+
+    for (square = 0; square < SQUARE_COUNT; ++square) {
+        Piece piece = position_piece_at(position, square);
+        int distance;
+        int proximity;
+
+        if (piece_color(piece) != attacking_color) {
+            continue;
+        }
+        distance = square_distance(square, king_square);
+        proximity = 5 - distance;
+        if (proximity <= 0) {
+            continue;
+        }
+
+        switch (piece_type(piece)) {
+            case PIECE_TYPE_KNIGHT: units += proximity * 2; break;
+            case PIECE_TYPE_BISHOP: units += proximity; break;
+            case PIECE_TYPE_ROOK: units += proximity; break;
+            case PIECE_TYPE_QUEEN: units += proximity * 2; break;
+            default: break;
+        }
+    }
+    return units;
+}
+
+static int pawn_storm_danger(
+    const Position *position,
+    int king_square,
+    Color defending_color
+) {
+    Color attacking_color = opposite_color(defending_color);
+    Piece attacking_pawn = attacking_color == COLOR_WHITE
+        ? PIECE_WHITE_PAWN
+        : PIECE_BLACK_PAWN;
+    int king_column = square_column(king_square);
+    int danger = 0;
+    int square;
+
+    if (king_column > 2 && king_column < 5) {
+        return 0;
+    }
+
+    for (square = 0; square < SQUARE_COUNT; ++square) {
+        int advancement;
+        int proximity;
+
+        if (position_piece_at(position, square) != attacking_pawn ||
+            absolute_value(square_column(square) - king_column) > 1) {
+            continue;
+        }
+        advancement = attacking_color == COLOR_WHITE
+            ? 6 - square_row(square)
+            : square_row(square) - 1;
+        proximity = 6 - square_distance(square, king_square);
+        if (advancement > 0 && proximity > 0) {
+            danger += advancement * 2 + proximity * 2;
+        }
+    }
+    return danger;
+}
+
 static int side_king_safety_score(const Position *position, Color color) {
     int score = 0;
     int king_square = find_king_square(position, color);
@@ -38,6 +143,7 @@ static int side_king_safety_score(const Position *position, Color color) {
     int shield_row;
     int column;
     Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
+    int danger;
 
     if (!is_valid_square(king_square)) {
         return 0;
@@ -71,6 +177,14 @@ static int side_king_safety_score(const Position *position, Color color) {
             }
         }
     }
+
+    danger = king_attack_units(position, king_square, color) +
+             pawn_storm_danger(position, king_square, color);
+    danger += danger * danger / KING_DANGER_QUADRATIC_DIVISOR;
+    if (danger > MAX_KING_DANGER) {
+        danger = MAX_KING_DANGER;
+    }
+    score -= danger;
 
     return score;
 }

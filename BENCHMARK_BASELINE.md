@@ -28,8 +28,14 @@ are a good sign, but they are not proof of playing strength by themselves.
 
 | Position | Depth | Score | Best move | Nodes |
 | --- | ---: | ---: | --- | ---: |
-| 1 | 5 | 45 | b1c3 | 2,714 |
-| 2 | 5 | -395 | e2a6 | 6,920 |
-| 3 | 5 | 5 | b5b6 | 651 |
-| 4 | 5 | 0 | e2e8 | 3,980 |
-| **Total** | | | | **14,265** |
+| 1 | 5 | 52 | d2d4 | 6,033 |
+| 2 | 5 | -372 | e2a6 | 6,198 |
+| 3 | 5 | 5 | b5b6 | 652 |
+| 4 | 5 | 0 | e2e3 | 6,788 |
+| **Total** | | | | **19,671** |
+
+This baseline was updated after the strategic-evaluation batch on 2026-07-19.
+The node count was reproduced in consecutive release runs, the tactical suite
+passed 2/2, and the new engine scored 28 wins, 23 losses, and 5 draws against
+the preserved pre-change engine across paired matches at `2+0.02` and
+`1+0.01`.

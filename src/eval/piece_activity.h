@@ -3,6 +3,6 @@
 
 #include "src/chess/position.h"
 
-int piece_activity_score(const Position *position);
+int piece_activity_score(const Position *position, int endgame_weight);
 
 #endif // PIECE_ACTIVITY_H

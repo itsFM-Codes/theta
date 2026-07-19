@@ -1,12 +1,14 @@
 #include "piece_activity.h"
 
-#define BISHOP_PAIR_BONUS 30
+#define BISHOP_PAIR_MIDDLEGAME_BONUS 22
+#define BISHOP_PAIR_ENDGAME_BONUS 40
 #define SEMI_OPEN_ROOK_BONUS 12
 #define OPEN_ROOK_BONUS 8
 #define ROOK_SEVENTH_RANK_BONUS 16
 #define KNIGHT_OUTPOST_BONUS 18
 #define BAD_BISHOP_PAWN_PENALTY 3
 #define BAD_BISHOP_MOBILITY_PENALTY 8
+#define TRAPPED_MINOR_PENALTY 12
 
 static int file_has_pawn(const Position *position, int column, Color color) {
     Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
@@ -87,6 +89,31 @@ static int bishop_mobility(const Position *position, int square, Color color) {
            bishop_mobility_direction(position, row, column, 1, 1, color);
 }
 
+static int knight_mobility(const Position *position, int square, Color color) {
+    static const int OFFSETS[8][2] = {
+        {-2, -1}, {-2, 1}, {-1, -2}, {-1, 2},
+        {1, -2}, {1, 2}, {2, -1}, {2, 1}
+    };
+    int row = square_row(square);
+    int column = square_column(square);
+    int mobility = 0;
+    int index;
+
+    for (index = 0; index < 8; ++index) {
+        int target_row = row + OFFSETS[index][0];
+        int target_column = column + OFFSETS[index][1];
+        if (is_valid_coordinate(target_row, target_column) &&
+            piece_color(position_piece_at_coordinates(
+                position,
+                target_row,
+                target_column
+            )) != color) {
+            mobility++;
+        }
+    }
+    return mobility;
+}
+
 static int pawns_on_square_color(
     const Position *position,
     Color color,
@@ -154,7 +181,11 @@ static int rook_on_seventh_rank(int square, Color color) {
            (color == COLOR_BLACK && row == 6);
 }
 
-static int side_piece_activity_score(const Position *position, Color color) {
+static int side_piece_activity_score(
+    const Position *position,
+    Color color,
+    int endgame_weight
+) {
     Piece bishop = color == COLOR_WHITE ? PIECE_WHITE_BISHOP : PIECE_BLACK_BISHOP;
     Piece knight = color == COLOR_WHITE ? PIECE_WHITE_KNIGHT : PIECE_BLACK_KNIGHT;
     Piece rook = color == COLOR_WHITE ? PIECE_WHITE_ROOK : PIECE_BLACK_ROOK;
@@ -166,11 +197,18 @@ static int side_piece_activity_score(const Position *position, Color color) {
         Piece piece = position_piece_at(position, square);
 
         if (piece == bishop) {
+            int mobility = bishop_mobility(position, square, color);
             bishops++;
             score -= bad_bishop_penalty(position, square, color);
+            if (mobility <= 2) {
+                score -= (3 - mobility) * TRAPPED_MINOR_PENALTY;
+            }
         } else if (piece == knight) {
             if (knight_is_outpost(position, square, color)) {
                 score += KNIGHT_OUTPOST_BONUS;
+            }
+            if (knight_mobility(position, square, color) <= 1) {
+                score -= TRAPPED_MINOR_PENALTY;
             }
         } else if (piece == rook) {
             int column = square_column(square);
@@ -196,17 +234,25 @@ static int side_piece_activity_score(const Position *position, Color color) {
     }
 
     if (bishops >= 2) {
-        score += BISHOP_PAIR_BONUS;
+        score += BISHOP_PAIR_MIDDLEGAME_BONUS +
+            (BISHOP_PAIR_ENDGAME_BONUS - BISHOP_PAIR_MIDDLEGAME_BONUS) *
+            endgame_weight / 256;
     }
 
     return score;
 }
 
-int piece_activity_score(const Position *position) {
+int piece_activity_score(const Position *position, int endgame_weight) {
     if (position == 0) {
         return 0;
     }
 
-    return side_piece_activity_score(position, COLOR_WHITE) -
-           side_piece_activity_score(position, COLOR_BLACK);
+    if (endgame_weight < 0) {
+        endgame_weight = 0;
+    } else if (endgame_weight > 256) {
+        endgame_weight = 256;
+    }
+
+    return side_piece_activity_score(position, COLOR_WHITE, endgame_weight) -
+           side_piece_activity_score(position, COLOR_BLACK, endgame_weight);
 }
