@@ -18,6 +18,11 @@ if errorlevel 1 (
 set "CXX=g++"
 set "CXXFLAGS=-std=c++17 -Wall -Wextra -Wpedantic -I."
 set "ENGINE_CXXFLAGS=%CXXFLAGS%"
+set "ENGINE_LINK_FLAGS="
+
+if defined THETA_ENGINE_LINK_FLAGS (
+    set "ENGINE_LINK_FLAGS=%THETA_ENGINE_LINK_FLAGS%"
+)
 
 if /I "%~1"=="debug" (
     rem Default flags already selected.
@@ -187,7 +192,7 @@ for /r "src" %%F in (*.cpp) do (
 )
 
 echo [BUILD] theta
-%CXX% %ENGINE_CXXFLAGS% main.cpp !ENGINE_SOURCES! -o build\theta.exe
+%CXX% %ENGINE_CXXFLAGS% main.cpp !ENGINE_SOURCES! %ENGINE_LINK_FLAGS% -o build\theta.exe
 if errorlevel 1 exit /b 1
 
 echo [TEST]  uci_protocol_test

@@ -29,6 +29,8 @@ jobs:
 
       - name: Build release and run tests
         shell: cmd
+        env:
+          THETA_ENGINE_LINK_FLAGS: -static -static-libgcc -static-libstdc++
         run: build.cmd release
 
       - name: Upload build artifact
