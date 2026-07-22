@@ -34,4 +34,4 @@ are a good sign, but they are not proof of playing strength by themselves.
 | 4 | 5 | 0 | e1f2 | 6,886 |
 | **Total** | | | | **17,865** |
 
-Elo (based on cutechess with stockfish-18): 1850
+Elo (based on cutechess with stockfish-18): 2150

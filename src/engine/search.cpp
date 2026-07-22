@@ -2,6 +2,7 @@
 
 #include "move_ordering.h"
 #include "quiescence.h"
+#include "static_exchange.h"
 
 #include "src/chess/movegen.h"
 #include "src/chess/zobrist.h"
@@ -423,6 +424,7 @@ static int negamax(
         null_position.side_to_move = opposite_color(null_position.side_to_move);
         null_position.en_passant_square = NO_SQUARE;
         null_position.halfmove_clock++;
+        null_position.zobrist_key_valid = 0;
         search_push_position(context, &null_position);
         null_score = -negamax(
             &null_position,
@@ -584,7 +586,7 @@ skip_null_cutoff:
 
     generate_moves(position, &moves);
     initialize_move_picker(
-        &move_picker, position, &moves, 1, context, ply, &table_move
+        &move_picker, position, &moves, 0, context, ply, &table_move
     );
 
     for (index = 0; move_picker_next(&move_picker, &moves.moves[index]);
@@ -597,6 +599,7 @@ skip_null_cutoff:
         int gives_check;
         int promotes_pawn;
         int quiet_move;
+        int see_score = 0;
         Color moving_color;
         int move_index;
         int score;
@@ -616,12 +619,28 @@ skip_null_cutoff:
         quiet_move = move_is_quiet(move);
         moving_color = position->side_to_move;
 
+        if (!quiet_move &&
+            (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
+            depth <= 4 && !is_pv_node && !in_check) {
+            see_score = static_exchange_evaluation(position, move);
+        }
+
         if (!make_legal_move(position, move, &undo)) {
             continue;
         }
 
         move_index = legal_move_count++;
         gives_check = position_is_in_check(position);
+
+        if (depth <= 4 && !is_pv_node && !in_check && move_index > 0 &&
+            !quiet_move && (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
+            !gives_check && see_score < -70 * depth) {
+            if (context != 0) {
+                context->see_prunes++;
+            }
+            undo_move(position, move, &undo);
+            continue;
+        }
 
         if (depth <= 2 && !in_check &&
             move_index >= late_move_pruning_threshold(
@@ -865,7 +884,7 @@ static int search_position_with_variation(
 
     generate_legal_moves(position, &moves);
     initialize_move_picker(
-        &move_picker, position, &moves, 1, context, 0, &table_move
+        &move_picker, position, &moves, 0, context, 0, &table_move
     );
 
     if (moves.count == 0) {

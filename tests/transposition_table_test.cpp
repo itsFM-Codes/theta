@@ -30,6 +30,26 @@ static void test_position_key_restores_after_undo(void) {
     assert(position_key(&position) == starting_key);
 }
 
+static void test_position_key_cache_invalidates_on_position_changes(void) {
+    Position position;
+    uint64_t white_key;
+    uint64_t black_key;
+
+    set_starting_position(&position);
+    white_key = position_key(&position);
+    assert(position_key(&position) == white_key);
+
+    position.side_to_move = COLOR_BLACK;
+    black_key = position_key(&position);
+    assert(black_key != white_key);
+
+    position.side_to_move = COLOR_WHITE;
+    assert(position_key(&position) == white_key);
+
+    assert(position_set_piece(&position, make_square(6, 0), PIECE_NONE));
+    assert(position_key(&position) != white_key);
+}
+
 static void test_exact_table_entry(void) {
     TranspositionTable table;
     TranspositionTableStatistics statistics = {};
@@ -201,6 +221,7 @@ static void test_configurable_clustered_table(void) {
 
 int main(void) {
     test_position_key_restores_after_undo();
+    test_position_key_cache_invalidates_on_position_changes();
     test_exact_table_entry();
     test_bound_table_entry();
     test_table_move_survives_unusable_score();

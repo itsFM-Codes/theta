@@ -5,8 +5,19 @@
 #include "piece_activity.h"
 #include "piece_square_tables.h"
 #include "strategic.h"
+#include "src/chess/zobrist.h"
 
 #define MAX_PHASE 24
+#define EVALUATION_CACHE_SIZE (1 << 16)
+
+typedef struct EvaluationCacheEntry {
+    uint64_t key;
+    int score;
+    int valid;
+} EvaluationCacheEntry;
+
+static thread_local EvaluationCacheEntry
+    evaluation_cache[EVALUATION_CACHE_SIZE];
 
 static int piece_value(Piece piece) {
     switch (piece_type(piece)) {
@@ -105,5 +116,23 @@ int evaluate_position_with_trace(
 }
 
 int evaluate_position(const Position *position) {
-    return evaluate_position_with_trace(position, 0);
+    uint64_t key;
+    EvaluationCacheEntry *entry;
+    int score;
+
+    if (position == 0) {
+        return 0;
+    }
+
+    key = position_key(position);
+    entry = &evaluation_cache[key & (EVALUATION_CACHE_SIZE - 1)];
+    if (entry->valid && entry->key == key) {
+        return entry->score;
+    }
+
+    score = evaluate_position_with_trace(position, 0);
+    entry->key = key;
+    entry->score = score;
+    entry->valid = 1;
+    return score;
 }

@@ -38,6 +38,11 @@ void clear_position(Position *position) {
     position->en_passant_square = NO_SQUARE;
     position->halfmove_clock = 0;
     position->fullmove_number = 1;
+    position->zobrist_key = 0;
+    position->zobrist_key_valid = 0;
+    position->zobrist_side_to_move = COLOR_NONE;
+    position->zobrist_castling_rights = CASTLING_NONE;
+    position->zobrist_en_passant_square = NO_SQUARE;
 }
 
 void set_starting_position(Position *position) {
@@ -101,6 +106,7 @@ int position_set_piece(Position *position, int square, Piece piece) {
     }
 
     position->board[square] = piece;
+    position->zobrist_key_valid = 0;
     return 1;
 }
 

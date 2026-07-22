@@ -53,6 +53,13 @@ uint64_t position_key(const Position *position) {
         return 0;
     }
 
+    if (position->zobrist_key_valid &&
+        position->zobrist_side_to_move == position->side_to_move &&
+        position->zobrist_castling_rights == position->castling_rights &&
+        position->zobrist_en_passant_square == position->en_passant_square) {
+        return position->zobrist_key;
+    }
+
     initialize_keys();
 
     for (square = 0; square < SQUARE_COUNT; ++square) {
@@ -75,5 +82,10 @@ uint64_t position_key(const Position *position) {
     }
 
     key ^= en_passant_keys[en_passant_index];
+    position->zobrist_key = key;
+    position->zobrist_key_valid = 1;
+    position->zobrist_side_to_move = position->side_to_move;
+    position->zobrist_castling_rights = position->castling_rights;
+    position->zobrist_en_passant_square = position->en_passant_square;
     return key;
 }

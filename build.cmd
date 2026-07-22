@@ -22,9 +22,9 @@ set "ENGINE_CXXFLAGS=%CXXFLAGS%"
 if /I "%~1"=="debug" (
     rem Default flags already selected.
 ) else if /I "%~1"=="release" (
-    set "ENGINE_CXXFLAGS=%CXXFLAGS% -O3 -DNDEBUG"
+    set "ENGINE_CXXFLAGS=%CXXFLAGS% -O3 -flto -DNDEBUG"
 ) else if /I "%~1"=="native" (
-    set "ENGINE_CXXFLAGS=%CXXFLAGS% -O3 -DNDEBUG -march=native"
+    set "ENGINE_CXXFLAGS=%CXXFLAGS% -O3 -flto -DNDEBUG -march=native"
 ) else if not "%~1"=="" (
     echo [ERROR] Unknown build mode "%~1". Use debug, release, or native.
     exit /b 1
@@ -106,6 +106,7 @@ echo [BUILD] evaluation_test
     src\chess\position.cpp ^
     src\chess\move.cpp ^
     src\chess\movegen.cpp ^
+    src\chess\zobrist.cpp ^
     src\eval\evaluation.cpp ^
     src\eval\king_safety.cpp ^
     src\eval\mobility.cpp ^

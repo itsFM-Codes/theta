@@ -19,6 +19,12 @@ typedef struct Position {
     int en_passant_square;
     int halfmove_clock;
     int fullmove_number;
+    // Cached because search probes the same position key several times.
+    mutable uint64_t zobrist_key;
+    mutable int zobrist_key_valid;
+    mutable Color zobrist_side_to_move;
+    mutable int zobrist_castling_rights;
+    mutable int zobrist_en_passant_square;
 } Position;
 
 void clear_position(Position *position);
