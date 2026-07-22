@@ -4,6 +4,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $engine = (Resolve-Path -LiteralPath $EnginePath).Path
+$originalInputEncoding = [Console]::InputEncoding
+# Process.StandardInput inherits this encoding; UTF-8 adds a BOM to the first UCI command.
+[Console]::InputEncoding = [System.Text.Encoding]::ASCII
 $process = New-Object System.Diagnostics.Process
 $process.StartInfo.FileName = $engine
 $process.StartInfo.WorkingDirectory = (Get-Location).Path
@@ -12,6 +15,8 @@ $process.StartInfo.RedirectStandardInput = $true
 $process.StartInfo.RedirectStandardOutput = $true
 $process.StartInfo.RedirectStandardError = $true
 $process.StartInfo.CreateNoWindow = $true
+$process.StartInfo.StandardOutputEncoding = [System.Text.Encoding]::ASCII
+$process.StartInfo.StandardErrorEncoding = [System.Text.Encoding]::ASCII
 
 function Send-Command([string]$Command) {
     $process.StandardInput.WriteLine($Command)
@@ -114,11 +119,16 @@ try {
     }
 }
 finally {
-    if (-not $process.HasExited) {
-        Send-Command "quit"
-        if (-not $process.WaitForExit(3000)) {
-            $process.Kill()
+    try {
+        if (-not $process.HasExited) {
+            Send-Command "quit"
+            if (-not $process.WaitForExit(3000)) {
+                $process.Kill()
+            }
         }
     }
-    $process.Dispose()
+    finally {
+        $process.Dispose()
+        [Console]::InputEncoding = $originalInputEncoding
+    }
 }
