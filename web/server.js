@@ -207,7 +207,8 @@ function parseUciBestMove(line) {
 
   if (tokens[0] === 'bestmove' &&
       tokens[1] &&
-      /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(tokens[1])) {
+      (tokens[1] === '0000' ||
+       /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(tokens[1]))) {
     return tokens[1];
   }
 
@@ -222,6 +223,7 @@ function handleSearchStream(request, response) {
     let errorOutput = '';
     let timeout;
     let closed = false;
+    let quitSent = false;
     let goCommand;
 
     try {
@@ -262,6 +264,11 @@ function handleSearchStream(request, response) {
         response.write(`${JSON.stringify(info)}\n`);
       } else if (bestMove && !closed) {
         response.write(`${JSON.stringify({ bestMove })}\n`);
+
+        if (!quitSent) {
+          quitSent = true;
+          engine.stdin.end('quit\n');
+        }
       }
     }
 
@@ -330,14 +337,17 @@ function handleSearchStream(request, response) {
       timeout = setTimeout(() => engine.kill(), value.timeMs + 1000);
     }
 
-    engine.stdin.end([
+    const commands = [
       'uci',
       'isready',
       `position fen ${value.fen}`,
       goCommand,
-      value.infinite === true ? '' : 'quit',
       ''
-    ].join('\n'));
+    ].join('\n');
+
+    // Keep input open while searching. Finite searches quit after bestmove;
+    // infinite searches stay alive until the client closes the response.
+    engine.stdin.write(commands);
   });
 }
 

@@ -18,7 +18,7 @@ const MOVE_FLAG_CASTLE_QUEENSIDE = 1 << 4;
 const MOVE_FLAG_PROMOTION = 1 << 5;
 let searchDepth = 8;
 let searchTimeMs = 1000;
-let searchInfinite = false;
+let searchInfinite = true;
 
 const boardElement = document.querySelector('#board');
 const linesElement = document.querySelector('#lines');
@@ -35,6 +35,9 @@ const depthElement = document.querySelector('#depth');
 const searchStatsElement = document.querySelector('#search-stats');
 const playControlsElement = document.querySelector('#play-controls');
 const playColorButtons = document.querySelectorAll('.play-color');
+const editorColorButtons = document.querySelectorAll('.editor-color');
+const castlingInputs = document.querySelectorAll('[data-castling]');
+const analysisToggleButton = document.querySelector('#analysis-toggle');
 
 let board = createStartingPosition();
 let currentMode = 'play';
@@ -69,6 +72,7 @@ let principalVariation = [];
 let searchStatus = 'Idle';
 let searchError = '';
 let engineMovePending = false;
+let analysisRunning = false;
 let searchStats = {
   selectiveDepth: 0,
   nodes: 0,
@@ -535,7 +539,8 @@ async function requestSearch({ infinite = searchInfinite } = {}) {
   }
 
   searchAbortController = new AbortController();
-  searchStatus = 'Searching';
+  analysisRunning = true;
+  searchStatus = 'Analyzing';
   searchError = '';
   refreshAnalysis();
 
@@ -596,7 +601,7 @@ async function requestSearch({ infinite = searchInfinite } = {}) {
         }
 
         if (requestNumber === evaluationRequestNumber) {
-          searchStatus = 'Searching';
+          searchStatus = 'Analyzing';
           searchStats = {
             selectiveDepth: update.selectiveDepth || update.depth,
             nodes: update.nodes || 0,
@@ -616,13 +621,13 @@ async function requestSearch({ infinite = searchInfinite } = {}) {
     }
 
     if (requestNumber === evaluationRequestNumber) {
-      searchStatus = 'Ready';
+      searchStatus = 'Analysis complete';
       refreshAnalysis();
     }
   } catch (error) {
     if (error.name === 'AbortError') {
       if (requestNumber === evaluationRequestNumber) {
-        searchStatus = 'Cancelled';
+        searchStatus = 'Analysis stopped';
         refreshAnalysis();
       }
     } else {
@@ -632,6 +637,12 @@ async function requestSearch({ infinite = searchInfinite } = {}) {
         refreshAnalysis();
       }
       console.error(error);
+    }
+  } finally {
+    if (requestNumber === evaluationRequestNumber) {
+      analysisRunning = false;
+      searchAbortController = null;
+      refreshAnalysis();
     }
   }
 }
@@ -1088,13 +1099,13 @@ function handleEditorClick(row, column) {
   board[row][column] = selectedEditorPiece || '.';
   selectedSquare = null;
   legalMoves = [];
-  castlingRights = '';
   enPassantSquare = '-';
   resetHistory();
   renderBoard();
   updateEvaluation(0);
   analysisDepth = 0;
   principalVariation = [];
+  refreshEditorControls();
   refreshAnalysis();
 }
 
@@ -1419,6 +1430,12 @@ function formatPrincipalVariation() {
 function refreshAnalysis() {
   const selectiveDepth = searchStats.selectiveDepth || analysisDepth;
 
+  analysisToggleButton.hidden = currentMode !== 'analysis';
+  analysisToggleButton.textContent = analysisRunning
+    ? 'Stop analysis'
+    : 'Start analysis';
+  analysisToggleButton.classList.toggle('stop', analysisRunning);
+
   searchStatusElement.textContent = searchStatus;
   depthElement.textContent = selectiveDepth > analysisDepth
     ? `Depth ${analysisDepth} / Sel ${selectiveDepth}`
@@ -1445,21 +1462,26 @@ function refreshAnalysis() {
 
 function renderEditorTray() {
   const tray = document.querySelector('#piece-tray');
-  const pieces = [...'PNBRQKpnbrqk'];
+  const pieceButtons = [];
 
-  const pieceButtons = pieces.map(piece => {
+  function pieceButton(piece) {
     const active = piece === selectedEditorPiece ? ' active' : '';
 
     return [
-      `<button class="tray-piece${active}" data-piece="${piece}">`,
+      `<button class="tray-piece${active}" data-piece="${piece}" aria-label="Place ${piece}">`,
       renderPiece(piece),
       '</button>'
     ].join('');
-  });
+  }
 
-  pieceButtons.push(
-    '<button class="tray-piece" data-piece="" aria-label="Erase">&times;</button>'
-  );
+  function eraserButton() {
+    const active = selectedEditorPiece === '' ? ' active' : '';
+
+    return `<button class="tray-piece eraser${active}" data-piece="" aria-label="Erase piece">&times;</button>`;
+  }
+
+  pieceButtons.push(...[...'kqrbnp'].map(pieceButton), eraserButton());
+  pieceButtons.push(...[...'KQRBNP'].map(pieceButton), eraserButton());
   tray.innerHTML = pieceButtons.join('');
 
   for (const button of tray.querySelectorAll('button')) {
@@ -1470,6 +1492,39 @@ function renderEditorTray() {
 function handleEditorPieceClick(event) {
   selectedEditorPiece = event.currentTarget.dataset.piece;
   renderEditorTray();
+}
+
+function refreshEditorControls() {
+  for (const button of editorColorButtons) {
+    const active = button.dataset.color === sideToMove;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  }
+
+  for (const input of castlingInputs) {
+    input.checked = castlingRights.includes(input.dataset.castling);
+  }
+}
+
+function setEditorSide(color) {
+  if ((color !== 'white' && color !== 'black') || sideToMove === color) {
+    return;
+  }
+
+  sideToMove = color;
+  halfmoveClock = 0;
+  fullmoveNumber = 1;
+  resetHistory();
+  refreshEditorControls();
+  renderBoard();
+}
+
+function updateEditorCastlingRights() {
+  castlingRights = [...castlingInputs]
+    .filter(input => input.checked)
+    .map(input => input.dataset.castling)
+    .join('');
+  resetHistory();
 }
 
 function refreshPlayControls() {
@@ -1491,7 +1546,8 @@ function setPlayerColor(color) {
   isFlipped = color === 'black';
   updateEvaluation(materialEvaluation, evaluationText);
   refreshPlayControls();
-  resetBoard();
+  renderBoard();
+  refreshGameState({ startEngine: currentMode === 'play' });
 }
 
 function setMode(mode) {
@@ -1502,6 +1558,7 @@ function setMode(mode) {
   }
 
   engineMovePending = false;
+  analysisRunning = false;
   currentMode = mode;
   selectedSquare = null;
   legalMoves = [];
@@ -1515,6 +1572,7 @@ function setMode(mode) {
   document.querySelector('#side-panel').classList.toggle('editing', mode === 'editor');
 
   refreshPlayControls();
+  refreshEditorControls();
   refreshSearchSettings();
   refreshAnalysis();
   renderBoard();
@@ -1544,6 +1602,7 @@ function resetBoard() {
   legalMoves = [];
   moveRequestNumber++;
   resetHistory();
+  refreshEditorControls();
   renderBoard();
   refreshAnalysis();
 
@@ -1571,6 +1630,7 @@ function clearBoard() {
   legalMoves = [];
   moveRequestNumber++;
   resetHistory();
+  refreshEditorControls();
   renderBoard();
   updateEvaluation(0);
   analysisDepth = 0;
@@ -1586,15 +1646,32 @@ for (const button of playColorButtons) {
   button.addEventListener('click', () => setPlayerColor(button.dataset.color));
 }
 
+for (const button of editorColorButtons) {
+  button.addEventListener('click', () => setEditorSide(button.dataset.color));
+}
+
+for (const input of castlingInputs) {
+  input.addEventListener('change', updateEditorCastlingRights);
+}
+
 document.querySelector('#flip').addEventListener('click', () => {
   isFlipped = !isFlipped;
   updateEvaluation(materialEvaluation, evaluationText);
   renderBoard();
 });
 
-document.querySelector('#reset').addEventListener('click', resetBoard);
 document.querySelector('#clear').addEventListener('click', clearBoard);
-document.querySelector('#start').addEventListener('click', resetBoard);
+document.querySelector('#starting-position').addEventListener('click', resetBoard);
+document.querySelector('#analyze-position').addEventListener('click', () => {
+  setMode('analysis');
+});
+analysisToggleButton.addEventListener('click', () => {
+  if (analysisRunning && searchAbortController) {
+    searchAbortController.abort();
+  } else {
+    requestSearch();
+  }
+});
 settingsButton.addEventListener('click', () => {
   const isOpen = settingsButton.getAttribute('aria-expanded') === 'true';
 
@@ -1651,6 +1728,7 @@ new ResizeObserver(syncWorkspaceHeight).observe(boardElement);
 renderEditorTray();
 resetHistory();
 refreshPlayControls();
+refreshEditorControls();
 refreshSearchSettings();
 renderBoard();
 syncWorkspaceHeight();

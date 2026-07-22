@@ -10,14 +10,14 @@
   <body>
     <main class="app-shell">
       <header class="topbar">
-        <button class="brand" id="reset" aria-label="Reset board">
+        <div class="brand" aria-label="Theta chess engine">
           theta
-        </button>
+        </div>
 
         <nav class="mode-menu" aria-label="Mode">
           <button class="mode active" data-mode="play">Play</button>
-          <button class="mode" data-mode="editor">Editor</button>
-          <button class="mode" data-mode="analysis">Analysis</button>
+          <button class="mode" data-mode="analysis">Analyze</button>
+          <button class="mode" data-mode="editor">Board editor</button>
         </nav>
 
         <button class="flip" id="flip" aria-label="Flip board">
@@ -51,6 +51,10 @@
             </button>
           </div>
 
+          <button class="analysis-toggle primary-action" id="analysis-toggle" hidden>
+            Stop analysis
+          </button>
+
           <div class="play-controls" id="play-controls">
             <span>Play as</span>
             <div class="side-selector" role="group" aria-label="Choose your side">
@@ -74,6 +78,41 @@
               <span>Infinite analysis</span>
               <input id="search-infinite" type="checkbox">
             </label>
+          </div>
+
+          <div class="editor-tools" id="editor-tools" hidden>
+            <div class="panel-heading">
+              <div>
+                <h2>Board editor</h2>
+                <p>Choose a piece or eraser, then click the board.</p>
+              </div>
+            </div>
+
+            <div class="piece-tray" id="piece-tray"></div>
+
+            <div class="editor-setting">
+              <span>Side to move</span>
+              <div class="side-selector" id="editor-side" role="group" aria-label="Side to move">
+                <button class="editor-color active" data-color="white" aria-pressed="true">White</button>
+                <button class="editor-color" data-color="black" aria-pressed="false">Black</button>
+              </div>
+            </div>
+
+            <details class="position-details">
+              <summary>Castling rights</summary>
+              <div class="castling-options">
+                <label><input type="checkbox" data-castling="K"> White O-O</label>
+                <label><input type="checkbox" data-castling="Q"> White O-O-O</label>
+                <label><input type="checkbox" data-castling="k"> Black O-O</label>
+                <label><input type="checkbox" data-castling="q"> Black O-O-O</label>
+              </div>
+            </details>
+
+            <div class="editor-actions">
+              <button id="starting-position">Starting position</button>
+              <button id="clear">Clear board</button>
+              <button class="primary-action" id="analyze-position">Analyze position</button>
+            </div>
           </div>
 
           <ol class="lines" id="lines"></ol>
@@ -103,11 +142,6 @@
             </button>
           </div>
 
-          <div class="editor-tools" id="editor-tools" hidden>
-            <div class="piece-tray" id="piece-tray"></div>
-            <button id="clear">Clear</button>
-            <button id="start">Start</button>
-          </div>
         </aside>
       </section>
     </main>
