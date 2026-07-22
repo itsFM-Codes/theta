@@ -40,8 +40,33 @@ static int parse_int(const char *text, int *value) {
     return 1;
 }
 
+static int text_equals_ignore_case(const char *first, const char *second) {
+    while (*first != '\0' && *second != '\0') {
+        if (tolower((unsigned char)*first) !=
+            tolower((unsigned char)*second)) {
+            return 0;
+        }
+        first++;
+        second++;
+    }
+    return *first == '\0' && *second == '\0';
+}
+
+static int parse_bool(const char *text, int *value) {
+    if (text_equals_ignore_case(text, "true") || strcmp(text, "1") == 0) {
+        *value = 1;
+        return 1;
+    }
+    if (text_equals_ignore_case(text, "false") || strcmp(text, "0") == 0) {
+        *value = 0;
+        return 1;
+    }
+    return 0;
+}
+
 void set_default_config(EngineConfig *config) {
     config->max_depth = 6;
+    config->allow_draws = 1;
 }
 
 int load_config(const char *filename) {
@@ -83,6 +108,19 @@ int load_config(const char *filename) {
         *equals = '\0';
         key = trim(key);
         value = trim(equals + 1);
+
+        if (strcmp(key, "allow_draw") == 0 ||
+            strcmp(key, "allow_draws") == 0) {
+            if (!parse_bool(value, &g_config.allow_draws)) {
+                fprintf(
+                    stderr,
+                    "Warning: %s must be true or false on line %d\n",
+                    key,
+                    line_number
+                );
+            }
+            continue;
+        }
 
         if (!parse_int(value, &number)) {
             fprintf(stderr, "Warning: Invalid value for %s on line %d\n", key, line_number);

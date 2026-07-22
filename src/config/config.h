@@ -3,6 +3,7 @@
 
 typedef struct EngineConfig {
     int max_depth;
+    int allow_draws;
 } EngineConfig;
 
 extern EngineConfig g_config;
