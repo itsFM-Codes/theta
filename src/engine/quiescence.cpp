@@ -48,6 +48,22 @@ static int move_gives_check(Position *position, Move move) {
     return gives_check;
 }
 
+static int position_has_legal_move(Position *position, const MoveList *moves) {
+    int index;
+
+    for (index = 0; index < moves->count; ++index) {
+        Move move = moves->moves[index];
+        UndoState undo;
+
+        if (make_legal_move(position, move, &undo)) {
+            undo_move(position, move, &undo);
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 int quiescence_search(
     Position *position,
     int alpha,
@@ -62,6 +78,7 @@ int quiescence_search(
     int table_score;
     int stand_pat = 0;
     int in_check;
+    int legal_move_count = 0;
     int original_alpha = alpha;
     int index;
 
@@ -95,23 +112,19 @@ int quiescence_search(
         }
     }
 
-    generate_legal_moves(position, &moves);
     in_check = position_is_in_check(position);
+    generate_moves(position, &moves);
 
-    if (moves.count == 0) {
-        int score = in_check ? -SEARCH_CHECKMATE + ply : 0;
+    if (!in_check && !position_has_legal_move(position, &moves)) {
         if (context != 0) {
             store_transposition_table(
                 &context->shared_state->transposition_table,
-                key, 0, search_score_to_table(score, ply),
+                key, 0, 0,
                 TRANSPOSITION_EXACT, table_move,
                 &context->transposition_statistics
             );
         }
-        if (in_check) {
-            return score;
-        }
-        return score;
+        return 0;
     }
 
     if (!in_check) {
@@ -185,9 +198,10 @@ int quiescence_search(
             continue;
         }
 
-        if (!make_move(position, move, &undo)) {
+        if (!make_legal_move(position, move, &undo)) {
             continue;
         }
+        legal_move_count++;
 
         search_push_position(context, position);
 
@@ -215,6 +229,20 @@ int quiescence_search(
             alpha = score;
             table_move = move;
         }
+    }
+
+    if (in_check && legal_move_count == 0) {
+        int score = -SEARCH_CHECKMATE + ply;
+
+        if (context != 0) {
+            store_transposition_table(
+                &context->shared_state->transposition_table,
+                key, 0, search_score_to_table(score, ply),
+                TRANSPOSITION_EXACT, table_move,
+                &context->transposition_statistics
+            );
+        }
+        return score;
     }
 
     if (context != 0) {

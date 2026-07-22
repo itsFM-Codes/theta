@@ -188,6 +188,30 @@ static void test_quiescence_searches_quiet_check_evasion(void) {
     destroy_search_shared_state(&shared_state);
 }
 
+static void test_quiescence_detects_stalemate(void) {
+    Position position;
+    SearchContext context;
+    SearchSharedState shared_state;
+
+    assert(position_from_fen(
+        &position,
+        "k7/2Q5/2K5/8/8/8/8/8 b - - 0 1"
+    ));
+    assert(!position_is_in_check(&position));
+    assert(initialize_search_shared_state(&shared_state));
+    initialize_search_context(&context, &shared_state, 0);
+    assert(search_push_position(&context, &position));
+    assert(quiescence_search(
+        &position,
+        -SEARCH_INFINITY,
+        SEARCH_INFINITY,
+        0,
+        &context
+    ) == 0);
+    destroy_search_context(&context);
+    destroy_search_shared_state(&shared_state);
+}
+
 static void test_search_returns_a_legal_move(void) {
     Position position;
     Move best_move;
@@ -442,6 +466,7 @@ int main(void) {
     test_quiescence_keeps_starting_position_equal();
     test_quiescence_considers_quiet_checks();
     test_quiescence_searches_quiet_check_evasion();
+    test_quiescence_detects_stalemate();
     test_search_returns_a_legal_move();
     test_search_restores_material();
     test_fifty_move_draw();
