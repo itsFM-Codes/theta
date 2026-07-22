@@ -6,12 +6,33 @@
 #include "src/chess/position.h"
 #include "src/engine/search.h"
 #include "src/engine/search_internal.h"
+#include "src/engine/move_ordering.h"
 #include "src/chess/zobrist.h"
 #include "src/engine/quiescence.h"
 #include "src/eval/evaluation.h"
 
 static SearchStatistics callback_statistics;
 static int callback_invocations;
+
+static void test_quiet_promotion_is_ordered_first(void) {
+    Position position;
+    MoveList moves;
+    MovePicker picker;
+    Move first_move;
+
+    clear_position(&position);
+    position_set_piece(&position, make_square(7, 7), PIECE_WHITE_KING);
+    position_set_piece(&position, make_square(0, 7), PIECE_BLACK_KING);
+    position_set_piece(&position, make_square(1, 0), PIECE_WHITE_PAWN);
+    position.side_to_move = COLOR_WHITE;
+
+    generate_legal_moves(&position, &moves);
+    initialize_move_picker(&picker, &position, &moves, 0, 0, 0, 0);
+
+    assert(move_picker_next(&picker, &first_move));
+    assert((first_move.flags & MOVE_FLAG_PROMOTION) != 0);
+    assert(piece_type(first_move.promotion) == PIECE_TYPE_QUEEN);
+}
 
 static void capture_search_statistics(
     int depth,
@@ -539,6 +560,7 @@ static void test_mate_tt_bounds_are_adjusted_for_ply(void) {
 }
 
 int main(void) {
+    test_quiet_promotion_is_ordered_first();
     test_zero_depth_evaluates_position();
     test_search_captures_hanging_rook();
     test_search_detects_checkmate();

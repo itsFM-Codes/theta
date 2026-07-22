@@ -10,6 +10,7 @@
 #define COUNTERMOVE_SCORE 3500
 #define MAX_HISTORY_SCORE 3000
 #define TABLE_MOVE_SCORE 20000
+#define PROMOTION_MOVE_SCORE 15000
 #define GOOD_CAPTURE_SCORE 10000
 #define LOSING_CAPTURE_SCORE 1500
 
@@ -204,6 +205,11 @@ static int move_order_score(
 
     if (table_move != 0 && moves_are_equal(move, *table_move)) {
         return TABLE_MOVE_SCORE;
+    }
+
+    if ((move.flags & MOVE_FLAG_PROMOTION) != 0 &&
+        (move.flags & MOVE_FLAG_CAPTURE) == 0) {
+        return PROMOTION_MOVE_SCORE + piece_value(move.promotion);
     }
 
     if ((move.flags & MOVE_FLAG_CAPTURE) == 0) {
