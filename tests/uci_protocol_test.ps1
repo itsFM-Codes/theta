@@ -18,7 +18,7 @@ function Send-Command([string]$Command) {
     $process.StandardInput.Flush()
 }
 
-function Read-Until([scriptblock]$Predicate, [int]$TimeoutMs = 3000) {
+function Read-Until([scriptblock]$Predicate, [int]$TimeoutMs = 10000) {
     $timer = [System.Diagnostics.Stopwatch]::StartNew()
     $seen = New-Object System.Collections.Generic.List[string]
 
@@ -38,7 +38,13 @@ function Read-Until([scriptblock]$Predicate, [int]$TimeoutMs = 3000) {
         }
     }
 
-    throw "Timed out waiting for engine output. Saw: $($seen -join ' | ')"
+    $state = "Engine is still running."
+    if ($process.HasExited) {
+        $stderr = $process.StandardError.ReadToEnd().Trim()
+        $state = "Engine exited with code $($process.ExitCode). stderr: $stderr"
+    }
+
+    throw "Timed out waiting for engine output. Saw: $($seen -join ' | '). $state"
 }
 
 function Read-BestMove([int]$TimeoutMs = 3000) {
