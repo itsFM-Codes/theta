@@ -28,10 +28,10 @@ are a good sign, but they are not proof of playing strength by themselves.
 
 | Position | Depth | Score | Best move | Nodes |
 | --- | ---: | ---: | --- | ---: |
-| 1 | 5 | 52 | d2d4 | 5,492 |
+| 1 | 5 | 52 | d2d4 | 5,495 |
 | 2 | 5 | -372 | e2a6 | 4,836 |
 | 3 | 5 | 5 | b5b6 | 648 |
 | 4 | 5 | 0 | e1f2 | 6,886 |
-| **Total** | | | | **17,862** |
+| **Total** | | | | **17,865** |
 
-Elo (based on cutechess with stockfish-18): 1775
+Elo (based on cutechess with stockfish-18): 1850

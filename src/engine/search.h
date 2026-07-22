@@ -64,6 +64,7 @@ typedef struct SearchLimits {
     std::atomic<bool> *stop_requested;
     const uint64_t *game_history;
     int game_history_count;
+    int draw_score;
 } SearchLimits;
 
 int search_position(Position *position, int depth, Move *best_move);

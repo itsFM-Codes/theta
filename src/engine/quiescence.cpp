@@ -8,7 +8,7 @@
 #include "src/eval/evaluation.h"
 
 #define DELTA_MARGIN 200
-#define QUIESCENCE_CHECK_PLY_LIMIT 2
+#define QUIESCENCE_CHECK_DEPTH 1
 
 static int piece_value(Piece piece) {
     switch (piece_type(piece)) {
@@ -64,17 +64,19 @@ static int position_has_legal_move(Position *position, const MoveList *moves) {
     return 0;
 }
 
-int quiescence_search(
+static int quiescence_search_internal(
     Position *position,
     int alpha,
     int beta,
     int ply,
+    int quiescence_depth,
     SearchContext *context
 ) {
     MoveList moves;
     MovePicker move_picker;
     Move table_move;
     uint64_t key = 0;
+    int table_depth = -quiescence_depth;
     int table_score;
     int stand_pat = 0;
     int in_check;
@@ -94,7 +96,7 @@ int quiescence_search(
     }
 
     if (search_is_draw(context, position)) {
-        return 0;
+        return search_draw_score(context);
     }
 
     if (ply >= MAX_SEARCH_PLY - 1) {
@@ -103,12 +105,12 @@ int quiescence_search(
 
     if (context != 0) {
         key = position_key(position);
-        if (probe_transposition_table(
-                &context->shared_state->transposition_table,
-                key, 0, alpha, beta, &table_score,
-                &table_move, &context->transposition_statistics
+        if (probe_search_transposition_table(
+                context,
+                key, table_depth, alpha, beta, ply, &table_score,
+                &table_move
             )) {
-            return search_score_from_table(table_score, ply);
+            return table_score;
         }
     }
 
@@ -116,15 +118,17 @@ int quiescence_search(
     generate_moves(position, &moves);
 
     if (!in_check && !position_has_legal_move(position, &moves)) {
+        int score = search_draw_score(context);
+
         if (context != 0) {
             store_transposition_table(
                 &context->shared_state->transposition_table,
-                key, 0, 0,
+                key, table_depth, search_score_to_table(score, ply),
                 TRANSPOSITION_EXACT, table_move,
                 &context->transposition_statistics
             );
         }
-        return 0;
+        return score;
     }
 
     if (!in_check) {
@@ -134,7 +138,7 @@ int quiescence_search(
             if (context != 0) {
                 store_transposition_table(
                     &context->shared_state->transposition_table,
-                    key, 0, search_score_to_table(beta, ply),
+                    key, table_depth, search_score_to_table(beta, ply),
                     TRANSPOSITION_LOWER_BOUND, table_move,
                     &context->transposition_statistics
                 );
@@ -164,12 +168,13 @@ int quiescence_search(
             return 0;
         }
 
-        if (!in_check && (tactical_move || ply <= QUIESCENCE_CHECK_PLY_LIMIT)) {
+        if (!in_check &&
+            (tactical_move || quiescence_depth < QUIESCENCE_CHECK_DEPTH)) {
             gives_check = move_gives_check(position, move);
         }
 
         if (!in_check && !tactical_move) {
-            if (ply > QUIESCENCE_CHECK_PLY_LIMIT || !gives_check) {
+            if (quiescence_depth >= QUIESCENCE_CHECK_DEPTH || !gives_check) {
                 continue;
             }
 
@@ -205,7 +210,14 @@ int quiescence_search(
 
         search_push_position(context, position);
 
-        score = -quiescence_search(position, -beta, -alpha, ply + 1, context);
+        score = -quiescence_search_internal(
+            position,
+            -beta,
+            -alpha,
+            ply + 1,
+            quiescence_depth + 1,
+            context
+        );
         search_pop_position(context);
         undo_move(position, move, &undo);
 
@@ -217,7 +229,7 @@ int quiescence_search(
             if (context != 0) {
                 store_transposition_table(
                     &context->shared_state->transposition_table,
-                    key, 0, search_score_to_table(beta, ply),
+                    key, table_depth, search_score_to_table(beta, ply),
                     TRANSPOSITION_LOWER_BOUND, move,
                     &context->transposition_statistics
                 );
@@ -237,7 +249,7 @@ int quiescence_search(
         if (context != 0) {
             store_transposition_table(
                 &context->shared_state->transposition_table,
-                key, 0, search_score_to_table(score, ply),
+                key, table_depth, search_score_to_table(score, ply),
                 TRANSPOSITION_EXACT, table_move,
                 &context->transposition_statistics
             );
@@ -248,7 +260,7 @@ int quiescence_search(
     if (context != 0) {
         store_transposition_table(
             &context->shared_state->transposition_table,
-            key, 0, search_score_to_table(alpha, ply),
+            key, table_depth, search_score_to_table(alpha, ply),
             alpha <= original_alpha
                 ? TRANSPOSITION_UPPER_BOUND
                 : TRANSPOSITION_EXACT,
@@ -257,4 +269,21 @@ int quiescence_search(
         );
     }
     return alpha;
+}
+
+int quiescence_search(
+    Position *position,
+    int alpha,
+    int beta,
+    int ply,
+    SearchContext *context
+) {
+    return quiescence_search_internal(
+        position,
+        alpha,
+        beta,
+        ply,
+        0,
+        context
+    );
 }

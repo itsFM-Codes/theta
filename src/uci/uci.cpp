@@ -24,6 +24,7 @@
 #define UCI_LINE_SIZE 4096
 #define UCI_FEN_SIZE 256
 #define UCI_MOVE_OVERHEAD_MS 10
+#define NO_DRAW_SCORE 1000
 
 #ifdef _WIN32
 class UciMutex {
@@ -258,6 +259,33 @@ static int parse_non_negative(const char *text, int *value) {
     return 1;
 }
 
+static int text_equals_ignore_case(const char *first, const char *second) {
+    while (*first != '\0' && *second != '\0') {
+        if (tolower((unsigned char)*first) !=
+            tolower((unsigned char)*second)) {
+            return 0;
+        }
+        first++;
+        second++;
+    }
+    return *first == '\0' && *second == '\0';
+}
+
+static int parse_boolean(const char *text, int *value) {
+    if (text == 0 || value == 0) {
+        return 0;
+    }
+    if (text_equals_ignore_case(text, "true") || strcmp(text, "1") == 0) {
+        *value = 1;
+        return 1;
+    }
+    if (text_equals_ignore_case(text, "false") || strcmp(text, "0") == 0) {
+        *value = 0;
+        return 1;
+    }
+    return 0;
+}
+
 static void print_search_info(
     int depth,
     int score,
@@ -306,7 +334,8 @@ static void search_from_command(
     Position position,
     const std::vector<uint64_t> &history,
     char *arguments,
-    std::atomic<bool> *stop_requested
+    std::atomic<bool> *stop_requested,
+    int draw_score
 ) {
     char *cursor = arguments;
     char *token;
@@ -411,6 +440,7 @@ static void search_from_command(
     limits.stop_requested = stop_requested;
     limits.game_history = history.empty() ? 0 : history.data();
     limits.game_history_count = (int)history.size();
+    limits.draw_score = draw_score;
 
     search_iterative_with_state_and_limits(
         shared_state,
@@ -443,6 +473,7 @@ typedef struct UciSearchTask {
     std::vector<uint64_t> history;
     std::string arguments;
     std::atomic<bool> *stop_requested;
+    int draw_score;
 } UciSearchTask;
 
 static void execute_search_task(UciSearchTask *task) {
@@ -456,7 +487,8 @@ static void execute_search_task(UciSearchTask *task) {
         task->position,
         task->history,
         mutable_arguments.data(),
-        task->stop_requested
+        task->stop_requested,
+        task->draw_score
     );
     delete task;
 }
@@ -478,6 +510,7 @@ int run_uci(void) {
     std::thread search_thread;
 #endif
     std::atomic<bool> stop_requested(false);
+    int allow_draws = g_config.allow_draws;
     char line[UCI_LINE_SIZE];
 
     if (!initialize_search_shared_state(&shared_state)) {
@@ -527,6 +560,8 @@ int run_uci(void) {
             printf("option name Hash type spin default %d min 1 max 1024\n",
                    DEFAULT_TRANSPOSITION_TABLE_MB);
             printf("option name Clear Hash type button\n");
+            printf("option name Allow Draws type check default %s\n",
+                   g_config.allow_draws ? "true" : "false");
             printf("uciok\n");
             fflush(stdout);
         } else if (strcmp(arguments, "isready") == 0) {
@@ -552,6 +587,18 @@ int run_uci(void) {
         } else if (strcmp(arguments, "setoption name Clear Hash") == 0) {
             stop_search();
             clear_search_shared_state(&shared_state);
+        } else if (strncmp(
+                arguments,
+                "setoption name Allow Draws value ",
+                33
+            ) == 0) {
+            int value;
+
+            stop_search();
+            if (parse_boolean(arguments + 33, &value)) {
+                allow_draws = value;
+                clear_search_shared_state(&shared_state);
+            }
         } else if (strncmp(arguments, "position ", 9) == 0) {
             stop_search();
             set_position_from_command(
@@ -573,6 +620,7 @@ int run_uci(void) {
             task->history = position_history;
             task->arguments = arguments + 2;
             task->stop_requested = &stop_requested;
+            task->draw_score = allow_draws ? 0 : NO_DRAW_SCORE;
 #ifdef _WIN32
             search_thread = CreateThread(
                 0,

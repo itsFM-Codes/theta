@@ -147,7 +147,7 @@ static void test_quiescence_considers_quiet_checks(void) {
         &position,
         -SEARCH_INFINITY,
         SEARCH_INFINITY,
-        0,
+        8,
         &context
     );
 
@@ -457,6 +457,87 @@ static void test_mate_distance_score(void) {
     assert(search_position(&position, 2, 0) == SEARCH_CHECKMATE - 1);
 }
 
+static void test_mate_tt_bounds_are_adjusted_for_ply(void) {
+    Position position;
+    SearchContext context;
+    SearchSharedState shared_state;
+    Move move = {};
+    Move table_move;
+    int table_score;
+    uint64_t key;
+
+    set_starting_position(&position);
+    key = position_key(&position);
+    assert(initialize_search_shared_state(&shared_state));
+    initialize_search_context(&context, &shared_state, 0);
+
+    store_transposition_table(
+        &shared_state.transposition_table,
+        key,
+        4,
+        search_score_to_table(SEARCH_CHECKMATE - 5, 2),
+        TRANSPOSITION_LOWER_BOUND,
+        move,
+        &context.transposition_statistics
+    );
+
+    assert(!probe_search_transposition_table(
+        &context,
+        key,
+        4,
+        -SEARCH_INFINITY,
+        SEARCH_CHECKMATE - 6,
+        4,
+        &table_score,
+        &table_move
+    ));
+    assert(probe_search_transposition_table(
+        &context,
+        key,
+        4,
+        -SEARCH_INFINITY,
+        SEARCH_CHECKMATE - 7,
+        4,
+        &table_score,
+        &table_move
+    ));
+    assert(table_score == SEARCH_CHECKMATE - 7);
+
+    store_transposition_table(
+        &shared_state.transposition_table,
+        key,
+        4,
+        search_score_to_table(-SEARCH_CHECKMATE + 5, 2),
+        TRANSPOSITION_UPPER_BOUND,
+        move,
+        &context.transposition_statistics
+    );
+    assert(!probe_search_transposition_table(
+        &context,
+        key,
+        4,
+        -SEARCH_CHECKMATE + 6,
+        SEARCH_INFINITY,
+        4,
+        &table_score,
+        &table_move
+    ));
+    assert(probe_search_transposition_table(
+        &context,
+        key,
+        4,
+        -SEARCH_CHECKMATE + 7,
+        SEARCH_INFINITY,
+        4,
+        &table_score,
+        &table_move
+    ));
+    assert(table_score == -SEARCH_CHECKMATE + 7);
+
+    destroy_search_context(&context);
+    destroy_search_shared_state(&shared_state);
+}
+
 int main(void) {
     test_zero_depth_evaluates_position();
     test_search_captures_hanging_rook();
@@ -479,5 +560,6 @@ int main(void) {
     test_node_limited_search_returns_a_legal_move();
     test_tactical_positions();
     test_mate_distance_score();
+    test_mate_tt_bounds_are_adjusted_for_ply();
     return 0;
 }

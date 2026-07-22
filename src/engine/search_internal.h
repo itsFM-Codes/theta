@@ -53,6 +53,7 @@ typedef struct SearchContext {
     int static_evaluation_valid[MAX_SEARCH_PLY];
     uint64_t position_keys[MAX_POSITION_HISTORY];
     int position_key_count;
+    int draw_score;
     // Shared engine state; the rest is worker-local.
     SearchSharedState *shared_state;
     TranspositionTableStatistics transposition_statistics;
@@ -81,11 +82,22 @@ void search_get_statistics(
 int search_push_position(SearchContext *context, const Position *position);
 void search_pop_position(SearchContext *context);
 int search_is_draw(const SearchContext *context, const Position *position);
+int search_draw_score(const SearchContext *context);
 int position_has_insufficient_material(const Position *position);
 
 int position_is_in_check(const Position *position);
 int search_score_to_table(int score, int ply);
 int search_score_from_table(int score, int ply);
+int probe_search_transposition_table(
+    SearchContext *context,
+    uint64_t key,
+    int depth,
+    int alpha,
+    int beta,
+    int ply,
+    int *score,
+    Move *best_move
+);
 
 void clear_variation(PrincipalVariation *variation);
 void update_variation(

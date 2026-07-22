@@ -85,6 +85,38 @@ int search_score_from_table(int score, int ply) {
     return score;
 }
 
+int probe_search_transposition_table(
+    SearchContext *context,
+    uint64_t key,
+    int depth,
+    int alpha,
+    int beta,
+    int ply,
+    int *score,
+    Move *best_move
+) {
+    int table_score;
+
+    if (context == 0 || context->shared_state == 0 ||
+        !probe_transposition_table(
+            &context->shared_state->transposition_table,
+            key,
+            depth,
+            search_score_to_table(alpha, ply),
+            search_score_to_table(beta, ply),
+            &table_score,
+            best_move,
+            &context->transposition_statistics
+        )) {
+        return 0;
+    }
+
+    if (score != 0) {
+        *score = search_score_from_table(table_score, ply);
+    }
+    return 1;
+}
+
 static int has_null_move_material(const Position *position, Color color) {
     int minor_count = 0;
     int square;
@@ -300,7 +332,7 @@ static int negamax(
     }
 
     if (search_is_draw(context, position)) {
-        return 0;
+        return search_draw_score(context);
     }
 
     if (ply >= MAX_SEARCH_PLY - 1) {
@@ -322,6 +354,25 @@ static int negamax(
     }
 
     in_check = position_is_in_check(position);
+
+    key = position_key(position);
+    if (excluded_move == 0 && probe_search_transposition_table(
+            context,
+            key,
+            depth,
+            alpha,
+            beta,
+            ply,
+            &table_score,
+            &table_move
+        )) {
+        if (is_valid_square(table_move.from) && is_valid_square(table_move.to)) {
+            update_variation(variation, table_move, 0);
+        }
+
+        return table_score;
+    }
+
     static_score = search_static_evaluation(position, context, ply);
     improving = position_is_improving(context, ply, static_score);
 
@@ -394,11 +445,11 @@ static int negamax(
         if (null_score >= beta) {
             if (depth >= 6) {
                 PrincipalVariation verification_variation;
-                int verification_score = -negamax(
+                int verification_score = negamax(
                     position,
                     depth - 4,
-                    -beta,
-                    -beta + 1,
+                    beta - 1,
+                    beta,
                     ply,
                     0,
                     0,
@@ -424,24 +475,6 @@ static int negamax(
     }
 
 skip_null_cutoff:
-
-    key = position_key(position);
-    if (excluded_move == 0 && probe_transposition_table(
-            &context->shared_state->transposition_table,
-            key,
-            depth,
-            alpha,
-            beta,
-            &table_score,
-            &table_move,
-            &context->transposition_statistics
-        )) {
-        if (is_valid_square(table_move.from) && is_valid_square(table_move.to)) {
-            update_variation(variation, table_move, 0);
-        }
-
-        return search_score_from_table(table_score, ply);
-    }
 
     if (excluded_move == 0 && !is_pv_node && depth >= 6 && !in_check &&
         beta < SEARCH_CHECKMATE - MAX_PRINCIPAL_VARIATION &&
@@ -749,7 +782,9 @@ skip_null_cutoff:
     }
 
     if (legal_move_count == 0) {
-        return in_check ? -SEARCH_CHECKMATE + ply : 0;
+        return in_check
+            ? -SEARCH_CHECKMATE + ply
+            : search_draw_score(context);
     }
 
     if (excluded_move == 0) {
@@ -803,7 +838,7 @@ static int search_position_with_variation(
     }
 
     if (search_is_draw(context, position)) {
-        return 0;
+        return search_draw_score(context);
     }
 
     if (depth <= 0) {
@@ -811,21 +846,21 @@ static int search_position_with_variation(
     }
 
     key = position_key(position);
-    if (probe_transposition_table(
-            &context->shared_state->transposition_table,
+    if (probe_search_transposition_table(
+            context,
             key,
             depth,
             alpha,
             beta,
+            0,
             &table_score,
-            &table_move,
-            &context->transposition_statistics
+            &table_move
         )) {
         if (is_valid_square(table_move.from) && is_valid_square(table_move.to)) {
             update_variation(variation, table_move, 0);
         }
 
-        return search_score_from_table(table_score, 0);
+        return table_score;
     }
 
     generate_legal_moves(position, &moves);
@@ -838,7 +873,7 @@ static int search_position_with_variation(
             return -SEARCH_CHECKMATE;
         }
 
-        return 0;
+        return search_draw_score(context);
     }
 
     for (index = 0; move_picker_next(&move_picker, &moves.moves[index]);

@@ -51,6 +51,7 @@ void initialize_search_context(
     context->singular_extensions = 0;
     context->selective_depth = 0;
     context->position_key_count = 0;
+    context->draw_score = 0;
     memset(context->history, 0, sizeof(context->history));
     memset(context->continuation_history, 0,
            sizeof(context->continuation_history));
@@ -166,6 +167,7 @@ void search_set_limits(SearchContext *context, const SearchLimits *limits) {
         ? limits->poll_interval
         : DEFAULT_SEARCH_POLL_INTERVAL;
     context->stop_requested = limits->stop_requested;
+    context->draw_score = limits->draw_score;
 }
 
 void search_set_position_history(
@@ -331,6 +333,10 @@ int search_is_draw(const SearchContext *context, const Position *position) {
     }
 
     return matches >= 3;
+}
+
+int search_draw_score(const SearchContext *context) {
+    return context == 0 ? 0 : context->draw_score;
 }
 
 int position_has_insufficient_material(const Position *position) {

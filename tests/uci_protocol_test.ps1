@@ -62,6 +62,9 @@ try {
     if (-not ($uci.Seen | Where-Object { $_ -eq "option name Clear Hash type button" })) {
         throw "UCI Clear Hash option was not reported"
     }
+    if (-not ($uci.Seen | Where-Object { $_ -eq "option name Allow Draws type check default true" })) {
+        throw "UCI Allow Draws option was not reported"
+    }
     Send-Command "setoption name Hash value 4"
     Send-Command "setoption name Clear Hash"
     Send-Command "isready"
@@ -94,6 +97,14 @@ try {
     $result = Read-BestMove 2000
     if (-not ($result.Seen | Where-Object { " $_ " -like "* score cp 0 *" })) {
         throw "Repeated position was not scored as a draw: $($result.Seen -join ' | ')"
+    }
+
+    Send-Command "setoption name Allow Draws value false"
+    Send-Command "position startpos moves g1f3 g8f6 f3g1 f6g8 g1f3 g8f6 f3g1 f6g8"
+    Send-Command "go depth 1"
+    $result = Read-BestMove 2000
+    if (-not ($result.Seen | Where-Object { " $_ " -like "* score cp 1000 *" })) {
+        throw "Draw avoidance score was not applied: $($result.Seen -join ' | ')"
     }
 }
 finally {
