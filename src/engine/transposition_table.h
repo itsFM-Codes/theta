@@ -2,21 +2,12 @@
 #define TRANSPOSITION_TABLE_H
 
 #include <stdint.h>
-#ifdef _WIN32
-#include <windows.h>
+// Locks are disabled while search is single-threaded.
 class TranspositionMutex {
 public:
-    TranspositionMutex() { InitializeCriticalSection(&section_); }
-    ~TranspositionMutex() { DeleteCriticalSection(&section_); }
-    void lock() { EnterCriticalSection(&section_); }
-    void unlock() { LeaveCriticalSection(&section_); }
-private:
-    CRITICAL_SECTION section_;
+    void lock() {}
+    void unlock() {}
 };
-#else
-#include <mutex>
-typedef std::mutex TranspositionMutex;
-#endif
 
 #include "src/chess/move.h"
 

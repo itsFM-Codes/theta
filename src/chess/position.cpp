@@ -83,38 +83,3 @@ void set_starting_position(Position *position) {
 
     position->castling_rights = CASTLING_ALL;
 }
-
-Piece position_piece_at(const Position *position, int square) {
-    if (position == 0 || !is_valid_square(square)) {
-        return PIECE_NONE;
-    }
-
-    return position->board[square];
-}
-
-Piece position_piece_at_coordinates(
-    const Position *position,
-    int row,
-    int column
-) {
-    return position_piece_at(position, make_square(row, column));
-}
-
-int position_set_piece(Position *position, int square, Piece piece) {
-    if (position == 0 || !is_valid_square(square)) {
-        return 0;
-    }
-
-    position->board[square] = piece;
-    position->zobrist_key_valid = 0;
-    return 1;
-}
-
-int position_set_piece_at_coordinates(
-    Position *position,
-    int row,
-    int column,
-    Piece piece
-) {
-    return position_set_piece(position, make_square(row, column), piece);
-}
