@@ -50,6 +50,43 @@ private:
 
 static UciMutex uci_output_mutex;
 
+static int read_uci_line(char *line, size_t size) {
+#ifdef _WIN32
+    HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD read_count;
+    size_t length = 0;
+
+    if (line == 0 || size == 0 || input == INVALID_HANDLE_VALUE ||
+        input == 0) {
+        return 0;
+    }
+
+    while (length + 1 < size) {
+        char character;
+
+        if (!ReadFile(input, &character, 1, &read_count, 0) ||
+            read_count == 0) {
+            if (length == 0) {
+                return 0;
+            }
+            break;
+        }
+
+        if (character == '\n') {
+            break;
+        }
+        if (character != '\r') {
+            line[length++] = character;
+        }
+    }
+
+    line[length] = '\0';
+    return 1;
+#else
+    return line != 0 && size > 0 && fgets(line, (int)size, stdin) != 0;
+#endif
+}
+
 static void print_uci_move(Move move) {
     char promotion = '\0';
 
@@ -536,7 +573,7 @@ int run_uci(void) {
 #endif
     };
 
-    while (fgets(line, sizeof(line), stdin) != 0) {
+    while (read_uci_line(line, sizeof(line))) {
         char *arguments;
         size_t length = strlen(line);
 
