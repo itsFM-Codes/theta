@@ -44,6 +44,40 @@ static void initialize_keys(void) {
     keys_initialized = 1;
 }
 
+static int en_passant_capture_is_possible(const Position *position) {
+    int row;
+    int column;
+    int pawn_row;
+    int file;
+    Piece pawn;
+
+    if (position == 0 ||
+        !is_valid_square(position->en_passant_square) ||
+        position->side_to_move == COLOR_NONE) {
+        return 0;
+    }
+
+    row = square_row(position->en_passant_square);
+    column = square_column(position->en_passant_square);
+    pawn_row = position->side_to_move == COLOR_WHITE ? row + 1 : row - 1;
+    pawn = position->side_to_move == COLOR_WHITE
+        ? PIECE_WHITE_PAWN
+        : PIECE_BLACK_PAWN;
+
+    if (pawn_row < 0 || pawn_row >= BOARD_SIZE) {
+        return 0;
+    }
+
+    for (file = column - 1; file <= column + 1; file += 2) {
+        if (file >= 0 && file < BOARD_SIZE &&
+            position_piece_at_coordinates(position, pawn_row, file) == pawn) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 uint64_t position_key(const Position *position) {
     uint64_t key = 0;
     int square;
@@ -76,10 +110,9 @@ uint64_t position_key(const Position *position) {
 
     key ^= castling_keys[position->castling_rights];
 
-    en_passant_index = position->en_passant_square + 1;
-    if (en_passant_index < 0 || en_passant_index > SQUARE_COUNT) {
-        en_passant_index = 0;
-    }
+    en_passant_index = en_passant_capture_is_possible(position)
+        ? position->en_passant_square + 1
+        : 0;
 
     key ^= en_passant_keys[en_passant_index];
     position->zobrist_key = key;
