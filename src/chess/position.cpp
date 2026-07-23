@@ -38,6 +38,8 @@ void clear_position(Position *position) {
     position->en_passant_square = NO_SQUARE;
     position->halfmove_clock = 0;
     position->fullmove_number = 1;
+    position->white_king_square = NO_SQUARE;
+    position->black_king_square = NO_SQUARE;
     position->zobrist_key = 0;
     position->zobrist_key_valid = 0;
     position->zobrist_side_to_move = COLOR_NONE;

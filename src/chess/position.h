@@ -19,6 +19,8 @@ typedef struct Position {
     int en_passant_square;
     int halfmove_clock;
     int fullmove_number;
+    int white_king_square;
+    int black_king_square;
     // Cached because search probes the same position key several times.
     mutable uint64_t zobrist_key;
     mutable int zobrist_key_valid;
@@ -57,6 +59,15 @@ static inline int position_set_piece(
     }
 
     position->board[square] = piece;
+    if (piece == PIECE_WHITE_KING) {
+        position->white_king_square = square;
+    } else if (piece == PIECE_BLACK_KING) {
+        position->black_king_square = square;
+    } else if (square == position->white_king_square) {
+        position->white_king_square = NO_SQUARE;
+    } else if (square == position->black_king_square) {
+        position->black_king_square = NO_SQUARE;
+    }
     position->zobrist_key_valid = 0;
     return 1;
 }

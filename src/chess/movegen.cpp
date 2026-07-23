@@ -16,7 +16,9 @@ static void add_move(MoveList *moves, int from, int to, Piece promotion, int fla
 }
 
 static int is_enemy_piece(const Position *position, int square) {
-    Piece piece = position_piece_at(position, square);
+    Piece piece = position != 0 && is_valid_square(square)
+        ? position->board[square]
+        : PIECE_NONE;
 
     return piece != PIECE_NONE && piece_color(piece) != position->side_to_move;
 }
@@ -36,6 +38,7 @@ static void add_promotion_moves(const Position *position, MoveList *moves, int f
 }
 
 static void generate_pawn_moves(const Position *position, MoveList *moves, int from) {
+    const Piece *board = position->board;
     int row = square_row(from);
     int column = square_column(from);
     int direction;
@@ -60,7 +63,7 @@ static void generate_pawn_moves(const Position *position, MoveList *moves, int f
     next_row = row + direction;
     to = make_square(next_row, column);
 
-    if (is_valid_square(to) && position_piece_at(position, to) == PIECE_NONE) {
+    if (is_valid_square(to) && board[to] == PIECE_NONE) {
         if (next_row == promotion_row) {
             add_promotion_moves(
                 position,
@@ -75,7 +78,7 @@ static void generate_pawn_moves(const Position *position, MoveList *moves, int f
             if (row == starting_row) {
                 int double_to = make_square(row + direction * 2, column);
 
-                if (position_piece_at(position, double_to) == PIECE_NONE) {
+                if (is_valid_square(double_to) && board[double_to] == PIECE_NONE) {
                     add_move(
                         moves,
                         from,
@@ -139,6 +142,7 @@ static void generate_knight_moves(const Position *position, MoveList *moves, int
     };
     int row = square_row(from);
     int column = square_column(from);
+    const Piece *board = position->board;
     int index;
 
     for (index = 0; index < 8; ++index) {
@@ -152,7 +156,7 @@ static void generate_knight_moves(const Position *position, MoveList *moves, int
             continue;
         }
 
-        target = position_piece_at(position, to);
+        target = board[to];
         if (target == PIECE_NONE) {
             add_move(moves, from, to, PIECE_NONE, MOVE_FLAG_NONE);
         } else if (piece_color(target) != position->side_to_move) {
@@ -165,6 +169,7 @@ static void generate_sliding_moves(const Position *position, MoveList *moves, in
     int start_row = square_row(from);
     int start_column = square_column(from);
     int direction_index;
+    const Piece *board = position->board;
 
     for (direction_index = 0;
          direction_index < direction_count;
@@ -174,7 +179,7 @@ static void generate_sliding_moves(const Position *position, MoveList *moves, in
 
         while (is_valid_coordinate(row, column)) {
             int to = make_square(row, column);
-            Piece target = position_piece_at(position, to);
+            Piece target = board[to];
 
             if (target == PIECE_NONE) {
                 add_move(moves, from, to, PIECE_NONE, MOVE_FLAG_NONE);
@@ -202,6 +207,7 @@ static void generate_castling_moves(const Position *position, MoveList *moves, i
     int king_side_right;
     int queen_side_right;
     Piece rook;
+    const Piece *board = position->board;
 
     if (position->side_to_move == COLOR_WHITE) {
         row = 7;
@@ -220,9 +226,9 @@ static void generate_castling_moves(const Position *position, MoveList *moves, i
     }
 
     if ((position->castling_rights & king_side_right) &&
-        position_piece_at_coordinates(position, row, 5) == PIECE_NONE &&
-        position_piece_at_coordinates(position, row, 6) == PIECE_NONE &&
-        position_piece_at_coordinates(position, row, 7) == rook) {
+        board[make_square(row, 5)] == PIECE_NONE &&
+        board[make_square(row, 6)] == PIECE_NONE &&
+        board[make_square(row, 7)] == rook) {
         add_move(
             moves,
             from,
@@ -233,10 +239,10 @@ static void generate_castling_moves(const Position *position, MoveList *moves, i
     }
 
     if ((position->castling_rights & queen_side_right) &&
-        position_piece_at_coordinates(position, row, 1) == PIECE_NONE &&
-        position_piece_at_coordinates(position, row, 2) == PIECE_NONE &&
-        position_piece_at_coordinates(position, row, 3) == PIECE_NONE &&
-        position_piece_at_coordinates(position, row, 0) == rook) {
+        board[make_square(row, 1)] == PIECE_NONE &&
+        board[make_square(row, 2)] == PIECE_NONE &&
+        board[make_square(row, 3)] == PIECE_NONE &&
+        board[make_square(row, 0)] == rook) {
         add_move(
             moves,
             from,
@@ -252,6 +258,7 @@ static void generate_king_moves(const Position *position, MoveList *moves, int f
     int column = square_column(from);
     int row_offset;
     int column_offset;
+    const Piece *board = position->board;
 
     for (row_offset = -1; row_offset <= 1; ++row_offset) {
         for (column_offset = -1; column_offset <= 1; ++column_offset) {
@@ -267,7 +274,7 @@ static void generate_king_moves(const Position *position, MoveList *moves, int f
                 continue;
             }
 
-            target = position_piece_at(position, to);
+            target = board[to];
             if (target == PIECE_NONE) {
                 add_move(moves, from, to, PIECE_NONE, MOVE_FLAG_NONE);
             } else if (piece_color(target) != position->side_to_move) {
@@ -303,6 +310,7 @@ void generate_moves(const Position *position, MoveList *moves) {
         {0, 1}
     };
     int square;
+    const Piece *board = position->board;
 
     if (moves == 0) {
         return;
@@ -314,7 +322,7 @@ void generate_moves(const Position *position, MoveList *moves) {
     }
 
     for (square = 0; square < SQUARE_COUNT; ++square) {
-        Piece piece = position_piece_at(position, square);
+        Piece piece = board[square];
 
         if (piece == PIECE_NONE ||
             piece_color(piece) != position->side_to_move) {
@@ -365,28 +373,17 @@ void generate_moves(const Position *position, MoveList *moves) {
 }
 
 int find_king(const Position *position, Color color) {
-    Piece king;
-    int square;
-
     if (position == 0) {
         return NO_SQUARE;
     }
 
     if (color == COLOR_WHITE) {
-        king = PIECE_WHITE_KING;
+        return position->white_king_square;
     } else if (color == COLOR_BLACK) {
-        king = PIECE_BLACK_KING;
+        return position->black_king_square;
     } else {
         return NO_SQUARE;
     }
-
-    for (square = 0; square < SQUARE_COUNT; ++square) {
-        if (position_piece_at(position, square) == king) {
-            return square;
-        }
-    }
-
-    return NO_SQUARE;
 }
 
 static int is_attacked_by_slider(
@@ -469,6 +466,7 @@ int is_square_attacked(
     Piece pawn;
     Piece knight;
     Piece king;
+    const Piece *board;
 
     if (position == 0 ||
         !is_valid_square(square) ||
@@ -478,6 +476,7 @@ int is_square_attacked(
 
     row = square_row(square);
     column = square_column(square);
+    board = position->board;
 
     if (attacking_color == COLOR_WHITE) {
         pawn = PIECE_WHITE_PAWN;
@@ -493,22 +492,21 @@ int is_square_attacked(
 
     // Check pawn attacks
     for (offset = -1; offset <= 1; offset += 2) {
-        if (position_piece_at_coordinates(
-                position,
-                pawn_row,
-                column + offset
-            ) == pawn) {
+        int pawn_square = make_square(pawn_row, column + offset);
+
+        if (is_valid_square(pawn_square) && board[pawn_square] == pawn) {
             return 1;
         }
     }
 
     // Check knight attacks
     for (offset = 0; offset < 8; ++offset) {
-        if (position_piece_at_coordinates(
-                position,
-                row + KNIGHT_OFFSETS[offset][0],
-                column + KNIGHT_OFFSETS[offset][1]
-            ) == knight) {
+        int knight_square = make_square(
+            row + KNIGHT_OFFSETS[offset][0],
+            column + KNIGHT_OFFSETS[offset][1]
+        );
+
+        if (is_valid_square(knight_square) && board[knight_square] == knight) {
             return 1;
         }
     }
@@ -543,15 +541,14 @@ int is_square_attacked(
         for (column_offset = -1;
              column_offset <= 1;
              ++column_offset) {
+            int king_square;
+
             if (row_offset == 0 && column_offset == 0) {
                 continue;
             }
 
-            if (position_piece_at_coordinates(
-                    position,
-                    row + row_offset,
-                    column + column_offset
-                ) == king) {
+            king_square = make_square(row + row_offset, column + column_offset);
+            if (is_valid_square(king_square) && board[king_square] == king) {
                 return 1;
             }
         }
