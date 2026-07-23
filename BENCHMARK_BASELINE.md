@@ -35,3 +35,4 @@ are a good sign, but they are not proof of playing strength by themselves.
 | **Total** | | | | **17,163** |
 
 Elo (based on cutechess with stockfish-18): 2210
+Nodes per second: ~130k
