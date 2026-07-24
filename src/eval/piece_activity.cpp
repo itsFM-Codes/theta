@@ -9,18 +9,16 @@
 #define BAD_BISHOP_PAWN_PENALTY 3
 #define BAD_BISHOP_MOBILITY_PENALTY 8
 #define TRAPPED_MINOR_PENALTY 12
+#define FILE_A_MASK UINT64_C(0x0101010101010101)
 
 static int file_has_pawn(const Position *position, int column, Color color) {
     Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
-    int row;
 
-    for (row = 0; row < BOARD_SIZE; ++row) {
-        if (position_piece_at_coordinates(position, row, column) == pawn) {
-            return 1;
-        }
+    if (column < 0 || column >= BOARD_SIZE) {
+        return 0;
     }
 
-    return 0;
+    return (position->piece_occupied[pawn] & (FILE_A_MASK << column)) != 0;
 }
 
 static int pawn_controls_square(
@@ -121,12 +119,14 @@ static int pawns_on_square_color(
 ) {
     Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
     int count = 0;
-    int square;
+    uint64_t pawns = position->piece_occupied[pawn];
 
-    for (square = 0; square < SQUARE_COUNT; ++square) {
-        if (position_piece_at(position, square) == pawn &&
-            ((square_row(square) + square_column(square)) & 1) ==
-                square_color) {
+    while (pawns != 0) {
+        int square = __builtin_ctzll(pawns);
+
+        pawns &= pawns - 1;
+        if (((square_row(square) + square_column(square)) & 1) ==
+            square_color) {
             count++;
         }
     }
@@ -191,11 +191,15 @@ static int side_piece_activity_score(
     Piece rook = color == COLOR_WHITE ? PIECE_WHITE_ROOK : PIECE_BLACK_ROOK;
     int bishops = 0;
     int score = 0;
-    int square;
+    uint64_t pieces = position->piece_occupied[bishop] |
+        position->piece_occupied[knight] |
+        position->piece_occupied[rook];
 
-    for (square = 0; square < SQUARE_COUNT; ++square) {
+    while (pieces != 0) {
+        int square = __builtin_ctzll(pieces);
         Piece piece = position_piece_at(position, square);
 
+        pieces &= pieces - 1;
         if (piece == bishop) {
             int mobility = bishop_mobility(position, square, color);
             bishops++;

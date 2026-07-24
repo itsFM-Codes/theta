@@ -44,15 +44,16 @@ static int pawn_controls_square(
 static int side_threat_score(const Position *position, Color color) {
     Color enemy = opposite_color(color);
     int score = 0;
-    int square;
+    uint64_t targets = position->color_occupied[enemy];
 
-    for (square = 0; square < SQUARE_COUNT; ++square) {
+    while (targets != 0) {
+        int square = __builtin_ctzll(targets);
         Piece target = position_piece_at(position, square);
         PieceType type = piece_type(target);
         int value;
 
-        if (piece_color(target) != enemy || type == PIECE_TYPE_KING ||
-            type == PIECE_TYPE_NONE) {
+        targets &= targets - 1;
+        if (type == PIECE_TYPE_KING || type == PIECE_TYPE_NONE) {
             continue;
         }
 

@@ -48,8 +48,22 @@ static void test_kiwipete_position(void) {
     assert(perft(&position, 4) == 4085603);
 }
 
+static void test_promotion_and_castling_position(void) {
+    Position position;
+    const char *fen =
+        "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 "
+        "w kq - 0 1";
+
+    assert(position_from_fen(&position, fen));
+    assert(perft(&position, 1) == 6);
+    assert(perft(&position, 2) == 264);
+    assert(perft(&position, 3) == 9467);
+    assert(perft(&position, 4) == 422333);
+}
+
 int main(void) {
     test_starting_position();
     test_kiwipete_position();
+    test_promotion_and_castling_position();
     return 0;
 }

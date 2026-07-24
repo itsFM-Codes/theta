@@ -1,7 +1,7 @@
 param(
-    [int]$Games = 14,
+    [int]$Games = 40,
     [string]$TimeControl = "2+0.02",
-    [int]$StockfishElo = 1320,
+    [int]$StockfishElo = 2200,
     [int]$Concurrency = 1,
     [int]$HashMb = 16,
     [int]$TimeMarginMs = 250,

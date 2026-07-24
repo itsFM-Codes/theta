@@ -16,10 +16,10 @@
 #define MOVE_FLAG_PROMOTION         (1 << 5)
 
 typedef struct Move {
-    int from;
-    int to;
-    Piece promotion;
-    int flags;
+    signed int from : 8;
+    signed int to : 8;
+    Piece promotion : 4;
+    unsigned int flags : 8;
 } Move;
 
 typedef struct MoveList {
@@ -37,6 +37,11 @@ typedef struct UndoState {
     int en_passant_square;
     int halfmove_clock;
     int fullmove_number;
+    uint64_t zobrist_key;
+    int zobrist_key_valid;
+    Color zobrist_side_to_move;
+    int zobrist_castling_rights;
+    int zobrist_en_passant_square;
 } UndoState;
 
 int make_move(Position *position, Move move, UndoState *undo);

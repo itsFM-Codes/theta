@@ -49,6 +49,13 @@ void initialize_search_context(
     context->probcut_cutoffs = 0;
     context->singular_attempts = 0;
     context->singular_extensions = 0;
+    context->static_evaluation_calls = 0;
+    context->static_evaluation_cache_hits = 0;
+    context->raw_evaluations = 0;
+    context->move_generations = 0;
+    context->tactical_move_generations = 0;
+    context->legal_move_attempts = 0;
+    context->see_calls = 0;
     context->selective_depth = 0;
     context->position_key_count = 0;
     context->draw_score = 0;
@@ -59,6 +66,7 @@ void initialize_search_context(
     memset(context->static_evaluation_valid, 0,
            sizeof(context->static_evaluation_valid));
     context->shared_state = shared_state;
+    reset_zobrist_statistics();
     memset(
         &context->transposition_statistics,
         0,
@@ -271,11 +279,37 @@ void search_get_statistics(
     statistics->singular_extensions = context == 0
         ? 0
         : context->singular_extensions;
+    statistics->static_evaluation_calls = context == 0
+        ? 0
+        : context->static_evaluation_calls;
+    statistics->static_evaluation_cache_hits = context == 0
+        ? 0
+        : context->static_evaluation_cache_hits;
+    statistics->raw_evaluations = context == 0 ? 0 : context->raw_evaluations;
+    statistics->move_generations = context == 0
+        ? 0
+        : context->move_generations;
+    statistics->tactical_move_generations = context == 0
+        ? 0
+        : context->tactical_move_generations;
+    statistics->legal_move_attempts = context == 0
+        ? 0
+        : context->legal_move_attempts;
+    statistics->see_calls = context == 0 ? 0 : context->see_calls;
     statistics->selective_depth = context == 0 ? 0 : context->selective_depth;
     statistics->elapsed_ms = search_elapsed_ms(context);
     statistics->hashfull = context == 0
         ? 0
         : transposition_table_hashfull(table);
+    if (context == 0) {
+        statistics->zobrist_cache_hits = 0;
+        statistics->zobrist_rebuilds = 0;
+    } else {
+        get_zobrist_statistics(
+            &statistics->zobrist_cache_hits,
+            &statistics->zobrist_rebuilds
+        );
+    }
 }
 
 int search_push_position(SearchContext *context, const Position *position) {
@@ -342,16 +376,19 @@ int search_draw_score(const SearchContext *context) {
 int position_has_insufficient_material(const Position *position) {
     int minor_count = 0;
     int bishop_color = -1;
-    int square;
+    uint64_t pieces;
 
     if (position == 0) {
         return 0;
     }
 
-    for (square = 0; square < SQUARE_COUNT; ++square) {
+    pieces = position->occupied;
+    while (pieces != 0) {
+        int square = __builtin_ctzll(pieces);
         Piece piece = position_piece_at(position, square);
         PieceType type = piece_type(piece);
 
+        pieces &= pieces - 1;
         if (type == PIECE_TYPE_NONE || type == PIECE_TYPE_KING) {
             continue;
         }

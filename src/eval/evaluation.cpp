@@ -54,6 +54,19 @@ static int piece_phase(Piece piece) {
     }
 }
 
+static int pop_first_square(uint64_t *squares) {
+    uint64_t value = *squares;
+    int square;
+
+    if (value == 0) {
+        return NO_SQUARE;
+    }
+
+    square = __builtin_ctzll(value);
+    *squares = value & (value - 1);
+    return square;
+}
+
 int evaluate_position_with_trace(
     const Position *position,
     EvaluationTrace *trace
@@ -61,19 +74,24 @@ int evaluate_position_with_trace(
     int score = 0;
     int phase = 0;
     int endgame_weight;
-    int square;
+    uint64_t pieces;
 
     if (position == 0) {
         return 0;
     }
 
-    for (square = 0; square < SQUARE_COUNT; ++square) {
+    pieces = position->occupied;
+    while (pieces != 0) {
+        int square = pop_first_square(&pieces);
+
         phase += piece_phase(position_piece_at(position, square));
     }
 
     endgame_weight = (MAX_PHASE - phase) * 256 / MAX_PHASE;
 
-    for (square = 0; square < SQUARE_COUNT; ++square) {
+    pieces = position->occupied;
+    while (pieces != 0) {
+        int square = pop_first_square(&pieces);
         Piece piece = position_piece_at(position, square);
         int value = piece_value(piece) +
                     piece_square_value(piece, square, endgame_weight);
