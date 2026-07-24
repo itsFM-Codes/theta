@@ -14,6 +14,9 @@
 
 typedef struct Position {
     Piece board[SQUARE_COUNT];
+    uint64_t occupied;
+    uint64_t color_occupied[COLOR_NONE];
+    uint64_t piece_occupied[PIECE_BLACK_KING + 1];
     Color side_to_move;
     int castling_rights;
     int en_passant_square;
@@ -54,19 +57,47 @@ static inline int position_set_piece(
     int square,
     Piece piece
 ) {
+    Piece previous_piece;
+    uint64_t square_mask;
+
     if (position == 0 || !is_valid_square(square)) {
         return 0;
     }
 
+    previous_piece = position->board[square];
+    square_mask = UINT64_C(1) << square;
+    if (previous_piece != PIECE_NONE) {
+        Color previous_color = piece_color(previous_piece);
+
+        position->occupied &= ~square_mask;
+        if (previous_color != COLOR_NONE) {
+            position->color_occupied[previous_color] &= ~square_mask;
+        }
+        position->piece_occupied[previous_piece] &= ~square_mask;
+    }
+
     position->board[square] = piece;
+    if (piece != PIECE_NONE) {
+        Color color = piece_color(piece);
+
+        position->occupied |= square_mask;
+        if (color != COLOR_NONE) {
+            position->color_occupied[color] |= square_mask;
+        }
+        position->piece_occupied[piece] |= square_mask;
+    }
+
+    if (previous_piece == PIECE_WHITE_KING && piece != PIECE_WHITE_KING) {
+        position->white_king_square = NO_SQUARE;
+    }
+    if (previous_piece == PIECE_BLACK_KING && piece != PIECE_BLACK_KING) {
+        position->black_king_square = NO_SQUARE;
+    }
     if (piece == PIECE_WHITE_KING) {
         position->white_king_square = square;
-    } else if (piece == PIECE_BLACK_KING) {
+    }
+    if (piece == PIECE_BLACK_KING) {
         position->black_king_square = square;
-    } else if (square == position->white_king_square) {
-        position->white_king_square = NO_SQUARE;
-    } else if (square == position->black_king_square) {
-        position->black_king_square = NO_SQUARE;
     }
     position->zobrist_key_valid = 0;
     return 1;

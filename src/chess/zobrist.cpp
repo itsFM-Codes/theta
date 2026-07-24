@@ -5,6 +5,8 @@ static uint64_t castling_keys[CASTLING_ALL + 1];
 static uint64_t en_passant_keys[SQUARE_COUNT + 1];
 static uint64_t side_to_move_key;
 static int keys_initialized;
+static thread_local uint64_t zobrist_cache_hits;
+static thread_local uint64_t zobrist_rebuilds;
 
 static uint64_t next_random_key(uint64_t *state) {
     uint64_t value;
@@ -78,10 +80,61 @@ static int en_passant_capture_is_possible(const Position *position) {
     return 0;
 }
 
+uint64_t zobrist_piece_square_key(Piece piece, int square) {
+    initialize_keys();
+    return piece >= PIECE_NONE && piece <= PIECE_BLACK_KING &&
+           is_valid_square(square)
+        ? piece_keys[piece][square]
+        : 0;
+}
+
+uint64_t zobrist_castling_rights_key(int castling_rights) {
+    initialize_keys();
+    return castling_rights >= CASTLING_NONE && castling_rights <= CASTLING_ALL
+        ? castling_keys[castling_rights]
+        : 0;
+}
+
+uint64_t zobrist_en_passant_key(int en_passant_index) {
+    initialize_keys();
+    return en_passant_index >= 0 && en_passant_index <= SQUARE_COUNT
+        ? en_passant_keys[en_passant_index]
+        : 0;
+}
+
+uint64_t zobrist_side_to_move_key(void) {
+    initialize_keys();
+    return side_to_move_key;
+}
+
+int zobrist_en_passant_index(const Position *position) {
+    if (position == 0) {
+        return 0;
+    }
+
+    return en_passant_capture_is_possible(position)
+        ? position->en_passant_square + 1
+        : 0;
+}
+
+void reset_zobrist_statistics(void) {
+    zobrist_cache_hits = 0;
+    zobrist_rebuilds = 0;
+}
+
+void get_zobrist_statistics(uint64_t *cache_hits, uint64_t *rebuilds) {
+    if (cache_hits != 0) {
+        *cache_hits = zobrist_cache_hits;
+    }
+    if (rebuilds != 0) {
+        *rebuilds = zobrist_rebuilds;
+    }
+}
+
 uint64_t position_key(const Position *position) {
     uint64_t key = 0;
-    int square;
     int en_passant_index;
+    uint64_t pieces;
 
     if (position == 0) {
         return 0;
@@ -91,14 +144,19 @@ uint64_t position_key(const Position *position) {
         position->zobrist_side_to_move == position->side_to_move &&
         position->zobrist_castling_rights == position->castling_rights &&
         position->zobrist_en_passant_square == position->en_passant_square) {
+        zobrist_cache_hits++;
         return position->zobrist_key;
     }
 
     initialize_keys();
+    zobrist_rebuilds++;
 
-    for (square = 0; square < SQUARE_COUNT; ++square) {
+    pieces = position->occupied;
+    while (pieces != 0) {
+        int square = __builtin_ctzll(pieces);
         Piece piece = position_piece_at(position, square);
 
+        pieces &= pieces - 1;
         if (piece != PIECE_NONE) {
             key ^= piece_keys[piece][square];
         }

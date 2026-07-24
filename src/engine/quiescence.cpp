@@ -82,6 +82,7 @@ static int quiescence_search_internal(
     int in_check;
     int legal_move_count = 0;
     int original_alpha = alpha;
+    int generated_all_moves;
     int index;
 
     table_move.from = NO_SQUARE;
@@ -100,6 +101,9 @@ static int quiescence_search_internal(
     }
 
     if (ply >= MAX_SEARCH_PLY - 1) {
+        if (context != 0) {
+            context->raw_evaluations++;
+        }
         return evaluate_position(position);
     }
 
@@ -115,23 +119,50 @@ static int quiescence_search_internal(
     }
 
     in_check = position_is_in_check(position);
-    generate_moves(position, &moves);
-
-    if (!in_check && !position_has_legal_move(position, &moves)) {
-        int score = search_draw_score(context);
-
+    generated_all_moves = in_check ||
+        quiescence_depth < QUIESCENCE_CHECK_DEPTH;
+    if (generated_all_moves) {
         if (context != 0) {
-            store_transposition_table(
-                &context->shared_state->transposition_table,
-                key, table_depth, search_score_to_table(score, ply),
-                TRANSPOSITION_EXACT, table_move,
-                &context->transposition_statistics
-            );
+            context->move_generations++;
         }
-        return score;
+        generate_moves(position, &moves);
+    } else {
+        if (context != 0) {
+            context->tactical_move_generations++;
+        }
+        generate_tactical_moves(position, &moves);
+    }
+
+    if (!in_check && (generated_all_moves || moves.count == 0)) {
+        MoveList legal_check_moves;
+        const MoveList *legal_source = &moves;
+
+        if (!generated_all_moves) {
+            if (context != 0) {
+                context->move_generations++;
+            }
+            generate_moves(position, &legal_check_moves);
+            legal_source = &legal_check_moves;
+        }
+        if (!position_has_legal_move(position, legal_source)) {
+            int score = search_draw_score(context);
+
+            if (context != 0) {
+                store_transposition_table(
+                    &context->shared_state->transposition_table,
+                    key, table_depth, search_score_to_table(score, ply),
+                    TRANSPOSITION_EXACT, table_move,
+                    &context->transposition_statistics
+                );
+            }
+            return score;
+        }
     }
 
     if (!in_check) {
+        if (context != 0) {
+            context->raw_evaluations++;
+        }
         stand_pat = evaluate_position(position);
 
         if (stand_pat >= beta) {
@@ -168,8 +199,8 @@ static int quiescence_search_internal(
             return 0;
         }
 
-        if (!in_check &&
-            (tactical_move || quiescence_depth < QUIESCENCE_CHECK_DEPTH)) {
+        if (!in_check && !tactical_move &&
+            quiescence_depth < QUIESCENCE_CHECK_DEPTH) {
             gives_check = move_gives_check(position, move);
         }
 
@@ -195,14 +226,24 @@ static int quiescence_search_internal(
 
         if (!in_check && tactical_move &&
             (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
-            !gives_check &&
-            static_exchange_evaluation(position, move) < 0) {
+            !gives_check) {
+            int see_score;
+
             if (context != 0) {
-                context->see_prunes++;
+                context->see_calls++;
             }
-            continue;
+            see_score = static_exchange_evaluation(position, move);
+            if (see_score < 0) {
+                if (context != 0) {
+                    context->see_prunes++;
+                }
+                continue;
+            }
         }
 
+        if (context != 0) {
+            context->legal_move_attempts++;
+        }
         if (!make_legal_move(position, move, &undo)) {
             continue;
         }

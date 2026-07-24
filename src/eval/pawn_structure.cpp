@@ -12,6 +12,7 @@
 #define BLOCKED_PASSED_PAWN_PENALTY 8
 #define PASSED_PAWN_KING_DISTANCE_SCALE 2
 #define PAWN_HASH_SIZE (1 << 14)
+#define FILE_A_MASK UINT64_C(0x0101010101010101)
 
 typedef struct PawnHashEntry {
     uint64_t key;
@@ -21,11 +22,25 @@ typedef struct PawnHashEntry {
 
 static thread_local PawnHashEntry pawn_hash[PAWN_HASH_SIZE];
 
-static uint64_t pawn_structure_key(const Position *position) {
-    uint64_t key = UINT64_C(1469598103934665603);
+static int pop_first_square(uint64_t *squares) {
+    uint64_t value = *squares;
     int square;
 
-    for (square = 0; square < SQUARE_COUNT; ++square) {
+    if (value == 0) {
+        return NO_SQUARE;
+    }
+
+    square = __builtin_ctzll(value);
+    *squares = value & (value - 1);
+    return square;
+}
+
+static uint64_t pawn_structure_key(const Position *position) {
+    uint64_t key = UINT64_C(1469598103934665603);
+    uint64_t pieces = position->occupied;
+
+    while (pieces != 0) {
+        int square = pop_first_square(&pieces);
         Piece piece = position_piece_at(position, square);
         PieceType type = piece_type(piece);
 
@@ -46,17 +61,15 @@ static int count_pawns_on_file(
     Color color,
     int column
 ) {
-    int count = 0;
-    int row;
     Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
 
-    for (row = 0; row < BOARD_SIZE; ++row) {
-        if (position_piece_at_coordinates(position, row, column) == pawn) {
-            ++count;
-        }
+    if (column < 0 || column >= BOARD_SIZE) {
+        return 0;
     }
 
-    return count;
+    return __builtin_popcountll(
+        position->piece_occupied[pawn] & (FILE_A_MASK << column)
+    );
 }
 
 static int pawn_is_passed(const Position *position, int square, Color color) {
@@ -93,16 +106,9 @@ static int passed_pawn_bonus(int square, Color color) {
 }
 
 static int king_square(const Position *position, Color color) {
-    Piece king = color == COLOR_WHITE ? PIECE_WHITE_KING : PIECE_BLACK_KING;
-    int square;
-
-    for (square = 0; square < SQUARE_COUNT; ++square) {
-        if (position_piece_at(position, square) == king) {
-            return square;
-        }
-    }
-
-    return NO_SQUARE;
+    return color == COLOR_WHITE
+        ? position->white_king_square
+        : position->black_king_square;
 }
 
 static int distance_between_squares(int first, int second) {
@@ -373,6 +379,7 @@ static int side_pawn_structure_score(const Position *position, Color color) {
     int square;
     Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
     int islands = pawn_island_count(position, color);
+    uint64_t pawns;
 
     if (islands > 1) {
         score -= (islands - 1) * PAWN_ISLAND_PENALTY;
@@ -386,13 +393,12 @@ static int side_pawn_structure_score(const Position *position, Color color) {
         }
     }
 
-    for (square = 0; square < SQUARE_COUNT; ++square) {
+    pawns = position->piece_occupied[pawn];
+    while (pawns != 0) {
         int column;
         int has_adjacent_pawn = 0;
 
-        if (position_piece_at(position, square) != pawn) {
-            continue;
-        }
+        square = pop_first_square(&pawns);
 
         column = square_column(square);
 

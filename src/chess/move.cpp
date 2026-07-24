@@ -1,5 +1,7 @@
 #include "move.h"
 
+#include "zobrist.h"
+
 static void remove_castling_right(Position *position, int right) {
     position->castling_rights &= ~right;
 }
@@ -95,6 +97,10 @@ static int is_valid_promotion_piece(Piece piece, Color color) {
 int make_move(Position *position, Move move, UndoState *undo) {
     Piece moved_piece;
     Piece target_piece;
+    Piece placed_piece;
+    uint64_t key;
+    int old_castling_rights;
+    int old_en_passant_index;
 
     // Check if args are valid
     if (position == 0 || undo == 0) {
@@ -131,6 +137,10 @@ int make_move(Position *position, Move move, UndoState *undo) {
         }
     }
 
+    key = position_key(position);
+    old_castling_rights = position->castling_rights;
+    old_en_passant_index = zobrist_en_passant_index(position);
+
     // Save current state for undo
     undo->moved_piece = moved_piece;
     undo->captured_piece = target_piece;
@@ -140,6 +150,11 @@ int make_move(Position *position, Move move, UndoState *undo) {
     undo->en_passant_square = position->en_passant_square;
     undo->halfmove_clock = position->halfmove_clock;
     undo->fullmove_number = position->fullmove_number;
+    undo->zobrist_key = position->zobrist_key;
+    undo->zobrist_key_valid = position->zobrist_key_valid;
+    undo->zobrist_side_to_move = position->zobrist_side_to_move;
+    undo->zobrist_castling_rights = position->zobrist_castling_rights;
+    undo->zobrist_en_passant_square = position->zobrist_en_passant_square;
 
     // Handle en passant capture square
     if (move.flags & MOVE_FLAG_EN_PASSANT) {
@@ -176,9 +191,11 @@ int make_move(Position *position, Move move, UndoState *undo) {
 
     // Place moved or promoted piece
     if (move.flags & MOVE_FLAG_PROMOTION) {
-        position_set_piece(position, move.to, move.promotion);
+        placed_piece = move.promotion;
+        position_set_piece(position, move.to, placed_piece);
     } else {
-        position_set_piece(position, move.to, moved_piece);
+        placed_piece = moved_piece;
+        position_set_piece(position, move.to, placed_piece);
     }
 
     // Move rook when castling
@@ -208,6 +225,44 @@ int make_move(Position *position, Move move, UndoState *undo) {
     }
 
     position->side_to_move = opposite_color(position->side_to_move);
+
+    key ^= zobrist_piece_square_key(moved_piece, move.from);
+    if (undo->captured_piece != PIECE_NONE) {
+        key ^= zobrist_piece_square_key(
+            undo->captured_piece,
+            undo->captured_square
+        );
+    }
+    key ^= zobrist_piece_square_key(placed_piece, move.to);
+
+    if ((move.flags & MOVE_FLAG_CASTLE_KINGSIDE) ||
+        (move.flags & MOVE_FLAG_CASTLE_QUEENSIDE)) {
+        int row = square_row(move.from);
+        int rook_from = (move.flags & MOVE_FLAG_CASTLE_KINGSIDE)
+            ? make_square(row, 7)
+            : make_square(row, 0);
+        int rook_to = (move.flags & MOVE_FLAG_CASTLE_KINGSIDE)
+            ? make_square(row, 5)
+            : make_square(row, 3);
+        Piece rook = piece_color(moved_piece) == COLOR_WHITE
+            ? PIECE_WHITE_ROOK
+            : PIECE_BLACK_ROOK;
+
+        key ^= zobrist_piece_square_key(rook, rook_from);
+        key ^= zobrist_piece_square_key(rook, rook_to);
+    }
+
+    key ^= zobrist_castling_rights_key(old_castling_rights);
+    key ^= zobrist_castling_rights_key(position->castling_rights);
+    key ^= zobrist_en_passant_key(old_en_passant_index);
+    key ^= zobrist_en_passant_key(zobrist_en_passant_index(position));
+    key ^= zobrist_side_to_move_key();
+
+    position->zobrist_key = key;
+    position->zobrist_key_valid = 1;
+    position->zobrist_side_to_move = position->side_to_move;
+    position->zobrist_castling_rights = position->castling_rights;
+    position->zobrist_en_passant_square = position->en_passant_square;
     return 1;
 }
 
@@ -244,4 +299,9 @@ void undo_move(Position *position, Move move, const UndoState *undo) {
     position->en_passant_square = undo->en_passant_square;
     position->halfmove_clock = undo->halfmove_clock;
     position->fullmove_number = undo->fullmove_number;
+    position->zobrist_key = undo->zobrist_key;
+    position->zobrist_key_valid = undo->zobrist_key_valid;
+    position->zobrist_side_to_move = undo->zobrist_side_to_move;
+    position->zobrist_castling_rights = undo->zobrist_castling_rights;
+    position->zobrist_en_passant_square = undo->zobrist_en_passant_square;
 }
