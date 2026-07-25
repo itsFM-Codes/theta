@@ -10,31 +10,22 @@
 #define MAX_KING_DANGER 180
 #define ROOK_FILE_PRESSURE 7
 #define QUEEN_FILE_PRESSURE 11
+#define FILE_A_MASK UINT64_C(0x0101010101010101)
 
 static int file_has_pawn(const Position *position, int column, Color color) {
     Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
-    int row;
 
-    for (row = 0; row < BOARD_SIZE; ++row) {
-        if (position_piece_at_coordinates(position, row, column) == pawn) {
-            return 1;
-        }
+    if (column < 0 || column >= BOARD_SIZE) {
+        return 0;
     }
 
-    return 0;
+    return (position->piece_occupied[pawn] & (FILE_A_MASK << column)) != 0;
 }
 
 static int find_king_square(const Position *position, Color color) {
-    Piece king = color == COLOR_WHITE ? PIECE_WHITE_KING : PIECE_BLACK_KING;
-    int square;
-
-    for (square = 0; square < SQUARE_COUNT; ++square) {
-        if (position_piece_at(position, square) == king) {
-            return square;
-        }
-    }
-
-    return NO_SQUARE;
+    return color == COLOR_WHITE
+        ? position->white_king_square
+        : position->black_king_square;
 }
 
 static int absolute_value(int value) {
@@ -60,7 +51,7 @@ static int king_attack_units(
     int units = 0;
     int row;
     int column;
-    int square;
+    uint64_t attackers;
 
     for (row = king_row - 1; row <= king_row + 1; ++row) {
         for (column = king_column - 1; column <= king_column + 1; ++column) {
@@ -76,14 +67,14 @@ static int king_attack_units(
         }
     }
 
-    for (square = 0; square < SQUARE_COUNT; ++square) {
+    attackers = position->color_occupied[attacking_color];
+    while (attackers != 0) {
+        int square = __builtin_ctzll(attackers);
         Piece piece = position_piece_at(position, square);
         int distance;
         int proximity;
 
-        if (piece_color(piece) != attacking_color) {
-            continue;
-        }
+        attackers &= attackers - 1;
         distance = square_distance(square, king_square);
         proximity = 5 - distance;
         if (proximity <= 0) {
@@ -112,18 +103,20 @@ static int pawn_storm_danger(
         : PIECE_BLACK_PAWN;
     int king_column = square_column(king_square);
     int danger = 0;
-    int square;
+    uint64_t pawns;
 
     if (king_column > 2 && king_column < 5) {
         return 0;
     }
 
-    for (square = 0; square < SQUARE_COUNT; ++square) {
+    pawns = position->piece_occupied[attacking_pawn];
+    while (pawns != 0) {
+        int square = __builtin_ctzll(pawns);
         int advancement;
         int proximity;
 
-        if (position_piece_at(position, square) != attacking_pawn ||
-            absolute_value(square_column(square) - king_column) > 1) {
+        pawns &= pawns - 1;
+        if (absolute_value(square_column(square) - king_column) > 1) {
             continue;
         }
         advancement = attacking_color == COLOR_WHITE
@@ -145,19 +138,20 @@ static int major_piece_file_pressure(
     Color attacking_color = opposite_color(defending_color);
     int king_column = square_column(king_square);
     int pressure = 0;
-    int square;
+    uint64_t majors =
+        position->piece_occupied[attacking_color == COLOR_WHITE
+            ? PIECE_WHITE_ROOK
+            : PIECE_BLACK_ROOK] |
+        position->piece_occupied[attacking_color == COLOR_WHITE
+            ? PIECE_WHITE_QUEEN
+            : PIECE_BLACK_QUEEN];
 
-    for (square = 0; square < SQUARE_COUNT; ++square) {
+    while (majors != 0) {
+        int square = __builtin_ctzll(majors);
         Piece piece = position_piece_at(position, square);
         int file_distance;
 
-        if (piece_color(piece) != attacking_color) {
-            continue;
-        }
-        if (piece_type(piece) != PIECE_TYPE_ROOK &&
-            piece_type(piece) != PIECE_TYPE_QUEEN) {
-            continue;
-        }
+        majors &= majors - 1;
 
         file_distance = absolute_value(square_column(square) - king_column);
         if (file_distance > 1 || file_has_pawn(

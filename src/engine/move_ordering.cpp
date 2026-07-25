@@ -238,7 +238,6 @@ static int move_order_score(
     attacker = position_piece_at(position, move.from);
     victim = captured_piece_for_move(position, move);
     {
-        int see_score = static_exchange_evaluation(position, move);
         int history_score = capture_history_score(
             context,
             position->side_to_move,
@@ -246,15 +245,9 @@ static int move_order_score(
             move.to,
             piece_type(victim)
         );
-        int value_score = piece_value(victim) - piece_value(attacker);
+        int value_score = piece_value(victim) * 16 - piece_value(attacker);
 
-        if (see_score >= 0) {
-            return GOOD_CAPTURE_SCORE + see_score * 16 + value_score +
-                   history_score;
-        }
-
-        return LOSING_CAPTURE_SCORE + see_score * 8 + value_score +
-               history_score;
+        return GOOD_CAPTURE_SCORE + value_score + history_score;
     }
 }
 

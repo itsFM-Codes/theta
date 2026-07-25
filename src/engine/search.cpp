@@ -119,27 +119,28 @@ int probe_search_transposition_table(
 }
 
 static int has_null_move_material(const Position *position, Color color) {
-    int minor_count = 0;
-    int square;
+    Piece queen;
+    Piece rook;
+    Piece bishop;
+    Piece knight;
+    uint64_t minors;
 
-    for (square = 0; square < SQUARE_COUNT; ++square) {
-        Piece piece = position_piece_at(position, square);
-        PieceType type = piece_type(piece);
-
-        if (piece_color(piece) != color) {
-            continue;
-        }
-
-        if (type == PIECE_TYPE_QUEEN || type == PIECE_TYPE_ROOK) {
-            return 1;
-        }
-
-        if (type == PIECE_TYPE_BISHOP || type == PIECE_TYPE_KNIGHT) {
-            minor_count++;
-        }
+    if (position == 0 || color == COLOR_NONE) {
+        return 0;
     }
 
-    return minor_count >= 2;
+    queen = color == COLOR_WHITE ? PIECE_WHITE_QUEEN : PIECE_BLACK_QUEEN;
+    rook = color == COLOR_WHITE ? PIECE_WHITE_ROOK : PIECE_BLACK_ROOK;
+    bishop = color == COLOR_WHITE ? PIECE_WHITE_BISHOP : PIECE_BLACK_BISHOP;
+    knight = color == COLOR_WHITE ? PIECE_WHITE_KNIGHT : PIECE_BLACK_KNIGHT;
+
+    if ((position->piece_occupied[queen] |
+         position->piece_occupied[rook]) != 0) {
+        return 1;
+    }
+
+    minors = position->piece_occupied[bishop] | position->piece_occupied[knight];
+    return (minors & (minors - 1)) != 0;
 }
 
 static int move_is_quiet(Move move) {
@@ -196,12 +197,16 @@ static int search_static_evaluation(
 ) {
     int score;
 
+    if (context != 0) {
+        context->static_evaluation_calls++;
+    }
     if (context != 0 &&
         probe_transposition_static_evaluation(
             &context->shared_state->transposition_table,
             position_key(position),
             &score
         )) {
+        context->static_evaluation_cache_hits++;
         if (ply >= 0 && ply < MAX_SEARCH_PLY) {
             context->static_evaluations[ply] = score;
             context->static_evaluation_valid[ply] = 1;
@@ -210,6 +215,9 @@ static int search_static_evaluation(
         return score;
     }
 
+    if (context != 0) {
+        context->raw_evaluations++;
+    }
     score = evaluate_position(position);
 
     if (context != 0 && ply >= 0 && ply < MAX_SEARCH_PLY) {
@@ -337,6 +345,9 @@ static int negamax(
     }
 
     if (ply >= MAX_SEARCH_PLY - 1) {
+        if (context != 0) {
+            context->raw_evaluations++;
+        }
         return evaluate_position(position);
     }
 
@@ -417,6 +428,8 @@ static int negamax(
         PrincipalVariation null_variation;
         int reduction = null_move_reduction(depth, static_score, beta);
         int null_score;
+        uint64_t null_key = position_key(&null_position);
+        int old_en_passant_index = zobrist_en_passant_index(&null_position);
 
         if (context != 0) {
             context->null_move_attempts++;
@@ -424,7 +437,18 @@ static int negamax(
         null_position.side_to_move = opposite_color(null_position.side_to_move);
         null_position.en_passant_square = NO_SQUARE;
         null_position.halfmove_clock++;
-        null_position.zobrist_key_valid = 0;
+        null_key ^= zobrist_side_to_move_key();
+        null_key ^= zobrist_en_passant_key(old_en_passant_index);
+        null_key ^= zobrist_en_passant_key(zobrist_en_passant_index(
+            &null_position
+        ));
+        null_position.zobrist_key = null_key;
+        null_position.zobrist_key_valid = 1;
+        null_position.zobrist_side_to_move = null_position.side_to_move;
+        null_position.zobrist_castling_rights =
+            null_position.castling_rights;
+        null_position.zobrist_en_passant_square =
+            null_position.en_passant_square;
         search_push_position(context, &null_position);
         null_score = -negamax(
             &null_position,
@@ -487,6 +511,9 @@ skip_null_cutoff:
         int probcut_beta = beta + 120;
 
         context->probcut_attempts++;
+        if (context != 0) {
+            context->move_generations++;
+        }
         generate_moves(position, &probcut_moves);
         initialize_move_picker(
             &probcut_picker,
@@ -506,6 +533,9 @@ skip_null_cutoff:
             if ((probcut_move.flags &
                  (MOVE_FLAG_CAPTURE | MOVE_FLAG_PROMOTION)) == 0) {
                 continue;
+            }
+            if (context != 0) {
+                context->legal_move_attempts++;
             }
             if (!make_legal_move(position, probcut_move, &probcut_undo)) {
                 continue;
@@ -584,6 +614,9 @@ skip_null_cutoff:
         }
     }
 
+    if (context != 0) {
+        context->move_generations++;
+    }
     generate_moves(position, &moves);
     initialize_move_picker(
         &move_picker, position, &moves, 0, context, ply, &table_move
@@ -622,9 +655,15 @@ skip_null_cutoff:
         if (!quiet_move &&
             (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
             depth <= 4 && !is_pv_node && !in_check) {
+            if (context != 0) {
+                context->see_calls++;
+            }
             see_score = static_exchange_evaluation(position, move);
         }
 
+        if (context != 0) {
+            context->legal_move_attempts++;
+        }
         if (!make_legal_move(position, move, &undo)) {
             continue;
         }
@@ -861,6 +900,9 @@ static int search_position_with_variation(
     }
 
     if (depth <= 0) {
+        if (context != 0) {
+            context->raw_evaluations++;
+        }
         return evaluate_position(position);
     }
 
@@ -882,6 +924,9 @@ static int search_position_with_variation(
         return table_score;
     }
 
+    if (context != 0) {
+        context->move_generations++;
+    }
     generate_legal_moves(position, &moves);
     initialize_move_picker(
         &move_picker, position, &moves, 0, context, 0, &table_move
@@ -1199,12 +1244,14 @@ int search_iterative_with_state_and_limits(
     if (best_move != 0) {
         MoveList legal_moves;
 
+        context.move_generations++;
         generate_legal_moves(position, &legal_moves);
         if (legal_moves.count > 0) {
             *best_move = legal_moves.moves[0];
         }
     }
 
+    context.raw_evaluations++;
     completed_score = evaluate_position(position);
 
     for (depth = 1; depth <= maximum_depth; ++depth) {

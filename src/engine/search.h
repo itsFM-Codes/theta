@@ -10,7 +10,7 @@
 #define SEARCH_INFINITY 30000
 #define SEARCH_CHECKMATE 29000
 #define MAX_PRINCIPAL_VARIATION 64
-#define DEFAULT_SEARCH_POLL_INTERVAL 64
+#define DEFAULT_SEARCH_POLL_INTERVAL 1024
 
 typedef struct PrincipalVariation {
     Move moves[MAX_PRINCIPAL_VARIATION];
@@ -43,6 +43,15 @@ typedef struct SearchStatistics {
     uint64_t probcut_cutoffs;
     uint64_t singular_attempts;
     uint64_t singular_extensions;
+    uint64_t static_evaluation_calls;
+    uint64_t static_evaluation_cache_hits;
+    uint64_t raw_evaluations;
+    uint64_t move_generations;
+    uint64_t tactical_move_generations;
+    uint64_t legal_move_attempts;
+    uint64_t see_calls;
+    uint64_t zobrist_cache_hits;
+    uint64_t zobrist_rebuilds;
     int selective_depth;
     int elapsed_ms;
     int hashfull;

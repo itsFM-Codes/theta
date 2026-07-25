@@ -53,6 +53,7 @@ echo [BUILD] move_test
     src\chess\board.cpp ^
     src\chess\position.cpp ^
     src\chess\move.cpp ^
+    src\chess\zobrist.cpp ^
     -o build\move_test.exe
 if errorlevel 1 exit /b 1
 
@@ -67,6 +68,7 @@ echo [BUILD] movegen_test
     src\chess\position.cpp ^
     src\chess\move.cpp ^
     src\chess\movegen.cpp ^
+    src\chess\zobrist.cpp ^
     -o build\movegen_test.exe
 if errorlevel 1 exit /b 1
 
@@ -82,6 +84,7 @@ echo [BUILD] legal_movegen_test
     src\chess\fen.cpp ^
     src\chess\move.cpp ^
     src\chess\movegen.cpp ^
+    src\chess\zobrist.cpp ^
     -o build\legal_movegen_test.exe
 if errorlevel 1 exit /b 1
 
@@ -97,6 +100,7 @@ echo [BUILD] fen_test
     src\chess\fen.cpp ^
     src\chess\move.cpp ^
     src\chess\movegen.cpp ^
+    src\chess\zobrist.cpp ^
     -o build\fen_test.exe
 if errorlevel 1 exit /b 1
 
@@ -148,6 +152,7 @@ echo [BUILD] static_exchange_test
     src\chess\position.cpp ^
     src\chess\move.cpp ^
     src\chess\movegen.cpp ^
+    src\chess\zobrist.cpp ^
     src\engine\static_exchange.cpp ^
     -o build\static_exchange_test.exe
 if errorlevel 1 exit /b 1

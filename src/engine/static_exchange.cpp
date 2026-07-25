@@ -134,21 +134,24 @@ static Move exchange_capture_move(
 
 static int exchange_after_capture(Position *position, int square, int depth) {
     int best_score = 0;
-    int from;
+    uint64_t attackers;
 
     if (depth >= MAX_EXCHANGE_DEPTH) {
         return 0;
     }
 
     // Only captures onto this square matter, so find its attackers directly.
-    for (from = 0; from < SQUARE_COUNT; ++from) {
-        Piece attacker = position_piece_at(position, from);
+    attackers = position->side_to_move == COLOR_NONE
+        ? 0
+        : position->color_occupied[position->side_to_move];
+    while (attackers != 0) {
+        int from = __builtin_ctzll(attackers);
         Move move;
         UndoState undo;
         int score;
 
-        if (piece_color(attacker) != position->side_to_move ||
-            !piece_attacks_square(position, from, square)) {
+        attackers &= attackers - 1;
+        if (!piece_attacks_square(position, from, square)) {
             continue;
         }
 

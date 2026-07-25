@@ -106,6 +106,11 @@ static int run_benchmark(void) {
         "4k3/8/8/3q4/8/8/4Q3/4K3 w - - 0 1"
     };
     uint64_t total_nodes = 0;
+    uint64_t total_raw_evaluations = 0;
+    uint64_t total_static_evaluation_calls = 0;
+    uint64_t total_static_evaluation_cache_hits = 0;
+    uint64_t total_see_calls = 0;
+    uint64_t total_zobrist_rebuilds = 0;
     int total_time_ms = 0;
     int index;
 
@@ -139,11 +144,22 @@ static int run_benchmark(void) {
         );
         move_to_uci(best_move, move);
         total_nodes += result.statistics.nodes;
+        total_raw_evaluations += result.statistics.raw_evaluations;
+        total_static_evaluation_calls +=
+            result.statistics.static_evaluation_calls;
+        total_static_evaluation_cache_hits +=
+            result.statistics.static_evaluation_cache_hits;
+        total_see_calls += result.statistics.see_calls;
+        total_zobrist_rebuilds += result.statistics.zobrist_rebuilds;
         total_time_ms += result.statistics.elapsed_ms;
 
         printf("position %d depth %d score %d bestmove %s nodes ",
                index + 1, completed_depth, score, move);
-        std::cout << result.statistics.nodes << '\n';
+        std::cout << result.statistics.nodes
+                  << " raweval " << result.statistics.raw_evaluations
+                  << " see " << result.statistics.see_calls
+                  << " keyrebuild " << result.statistics.zobrist_rebuilds
+                  << '\n';
     }
 
     printf("total nodes ");
@@ -151,6 +167,11 @@ static int run_benchmark(void) {
               << (total_time_ms > 0
                   ? total_nodes * 1000u / (uint64_t)total_time_ms
                   : 0)
+              << " raweval " << total_raw_evaluations
+              << " staticeval " << total_static_evaluation_calls
+              << " statichit " << total_static_evaluation_cache_hits
+              << " see " << total_see_calls
+              << " keyrebuild " << total_zobrist_rebuilds
               << '\n';
     return 1;
 }

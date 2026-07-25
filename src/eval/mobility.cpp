@@ -105,18 +105,21 @@ static int knight_mobility(const Position *position, int square, Color color) {
 
 int mobility_score(const Position *position) {
     int score = 0;
-    int square;
+    uint64_t pieces;
 
     if (position == 0) {
         return 0;
     }
 
-    for (square = 0; square < SQUARE_COUNT; ++square) {
+    pieces = position->occupied;
+    while (pieces != 0) {
+        int square = __builtin_ctzll(pieces);
         Piece piece = position_piece_at(position, square);
         PieceType type = piece_type(piece);
         int weight = 0;
         int value;
 
+        pieces &= pieces - 1;
         if (type == PIECE_TYPE_KNIGHT) {
             value = knight_mobility(position, square, piece_color(piece)) * 2;
         } else if (type == PIECE_TYPE_BISHOP) {

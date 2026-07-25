@@ -306,6 +306,36 @@ static void test_repetition_scan_stops_at_irreversible_move(void) {
     destroy_search_shared_state(&shared_state);
 }
 
+static void test_repetition_key_ignores_uncapturable_en_passant(void) {
+    Position with_ep;
+    Position without_ep;
+
+    assert(position_from_fen(
+        &with_ep,
+        "8/8/8/8/P7/8/8/k6K b - a3 0 1"
+    ));
+    assert(position_from_fen(
+        &without_ep,
+        "8/8/8/8/P7/8/8/k6K b - - 0 1"
+    ));
+    assert(position_key(&with_ep) == position_key(&without_ep));
+}
+
+static void test_repetition_key_keeps_capturable_en_passant(void) {
+    Position with_ep;
+    Position without_ep;
+
+    assert(position_from_fen(
+        &with_ep,
+        "8/8/8/8/Pp6/8/8/k6K b - a3 0 1"
+    ));
+    assert(position_from_fen(
+        &without_ep,
+        "8/8/8/8/Pp6/8/8/k6K b - - 0 1"
+    ));
+    assert(position_key(&with_ep) != position_key(&without_ep));
+}
+
 static void test_external_stop_returns_a_legal_fallback(void) {
     Position position;
     Move best_move;
@@ -575,6 +605,8 @@ int main(void) {
     test_fifty_move_draw();
     test_threefold_repetition_detection();
     test_repetition_scan_stops_at_irreversible_move();
+    test_repetition_key_ignores_uncapturable_en_passant();
+    test_repetition_key_keeps_capturable_en_passant();
     test_external_stop_returns_a_legal_fallback();
     test_insufficient_material_draw();
     test_search_reports_statistics();

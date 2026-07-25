@@ -33,11 +33,21 @@ void clear_position(Position *position) {
         position->board[square] = PIECE_NONE;
     }
 
+    position->occupied = 0;
+    for (square = 0; square < COLOR_NONE; ++square) {
+        position->color_occupied[square] = 0;
+    }
+    for (square = 0; square <= PIECE_BLACK_KING; ++square) {
+        position->piece_occupied[square] = 0;
+    }
+
     position->side_to_move = COLOR_WHITE;
     position->castling_rights = CASTLING_NONE;
     position->en_passant_square = NO_SQUARE;
     position->halfmove_clock = 0;
     position->fullmove_number = 1;
+    position->white_king_square = NO_SQUARE;
+    position->black_king_square = NO_SQUARE;
     position->zobrist_key = 0;
     position->zobrist_key_valid = 0;
     position->zobrist_side_to_move = COLOR_NONE;

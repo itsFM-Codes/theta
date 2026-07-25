@@ -4,6 +4,7 @@
 #include "move.h"
 
 void generate_moves(const Position *position, MoveList *moves);
+void generate_tactical_moves(const Position *position, MoveList *moves);
 void generate_legal_moves(Position *position, MoveList *moves);
 int make_legal_move(Position *position, Move move, UndoState *undo);
 
