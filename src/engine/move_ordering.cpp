@@ -238,6 +238,9 @@ static int move_order_score(
     attacker = position_piece_at(position, move.from);
     victim = captured_piece_for_move(position, move);
     {
+        int promotion_score = (move.flags & MOVE_FLAG_PROMOTION) != 0
+            ? (piece_value(move.promotion) - PAWN_VALUE) * 8
+            : 0;
         int history_score = capture_history_score(
             context,
             position->side_to_move,
@@ -247,7 +250,8 @@ static int move_order_score(
         );
         int value_score = piece_value(victim) * 16 - piece_value(attacker);
 
-        return GOOD_CAPTURE_SCORE + value_score + history_score;
+        return GOOD_CAPTURE_SCORE + promotion_score + value_score +
+            history_score;
     }
 }
 

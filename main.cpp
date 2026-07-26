@@ -1,13 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fstream>
 #include <iostream>
+#include <string>
+#include <vector>
 
 #include "src/chess/fen.h"
 #include "src/chess/movegen.h"
 #include "src/config/config.h"
 #include "src/engine/search.h"
+#include "src/engine/search_internal.h"
 #include "src/eval/evaluation.h"
+#include "src/eval/eval_tuning.h"
 #include "src/uci/uci.h"
 
 #define CONFIG_FILE "config/config.conf"
@@ -346,7 +351,7 @@ static int print_evaluation_trace(const char *fen) {
     printf(
         "{\"materialPst\":%d,\"mobility\":%d,\"pawnStructure\":%d,"
         "\"kingSafety\":%d,\"pieceActivity\":%d,\"threats\":%d,"
-        "\"space\":%d,\"total\":%d}\n",
+        "\"space\":%d,\"tempo\":%d,\"total\":%d}\n",
         trace.material_and_piece_square,
         trace.mobility,
         trace.pawn_structure,
@@ -354,8 +359,208 @@ static int print_evaluation_trace(const char *fen) {
         trace.piece_activity,
         trace.threats,
         trace.space,
+        trace.tempo,
         trace.total
     );
+    return 1;
+}
+
+static uint64_t next_random_value(uint64_t *seed) {
+    uint64_t value;
+
+    if (seed == 0) {
+        return 0;
+    }
+
+    value = *seed;
+    value ^= value << 13;
+    value ^= value >> 7;
+    value ^= value << 17;
+    *seed = value;
+    return value;
+}
+
+static int game_result(
+    Position *position,
+    int ply,
+    int max_plies,
+    double *result
+) {
+    MoveList moves;
+
+    if (position == 0 || result == 0) {
+        return 1;
+    }
+
+    generate_legal_moves(position, &moves);
+    if (moves.count == 0) {
+        if (position_is_in_check(position)) {
+            *result = position->side_to_move == COLOR_WHITE ? 0.0 : 1.0;
+        } else {
+            *result = 0.5;
+        }
+        return 1;
+    }
+
+    if (position->halfmove_clock >= 100 ||
+        position_has_insufficient_material(position) ||
+        ply >= max_plies) {
+        *result = 0.5;
+        return 1;
+    }
+
+    return 0;
+}
+
+static int score_selfplay_move(
+    Position *position,
+    Move move,
+    int depth,
+    int *score
+) {
+    SearchSharedState shared_state;
+    UndoState undo;
+    Move ignored_move;
+    int child_score;
+
+    if (position == 0 || score == 0 ||
+        !make_move(position, move, &undo)) {
+        return 0;
+    }
+
+    if (depth <= 0) {
+        child_score = evaluate_position(position);
+    } else {
+        if (!initialize_search_shared_state(&shared_state)) {
+            undo_move(position, move, &undo);
+            return 0;
+        }
+        child_score = search_position_with_state(
+            &shared_state,
+            position,
+            depth,
+            &ignored_move
+        );
+        destroy_search_shared_state(&shared_state);
+    }
+
+    undo_move(position, move, &undo);
+    *score = -child_score;
+    return 1;
+}
+
+static int choose_selfplay_move(
+    Position *position,
+    int depth,
+    int ply,
+    uint64_t *seed,
+    Move *chosen_move
+) {
+    MoveList moves;
+    int scores[MAX_MOVES];
+    int selected[MAX_MOVES];
+    int selected_count = 0;
+    int best_score = -SEARCH_INFINITY;
+    int margin = ply < 12 ? 120 : 60;
+    int index;
+
+    if (position == 0 || chosen_move == 0) {
+        return 0;
+    }
+
+    generate_legal_moves(position, &moves);
+    if (moves.count <= 0) {
+        return 0;
+    }
+
+    for (index = 0; index < moves.count; ++index) {
+        if (!score_selfplay_move(
+                position,
+                moves.moves[index],
+                depth - 1,
+                &scores[index]
+            )) {
+            return 0;
+        }
+        if (scores[index] > best_score) {
+            best_score = scores[index];
+        }
+    }
+
+    for (index = 0; index < moves.count; ++index) {
+        if (scores[index] >= best_score - margin) {
+            selected[selected_count++] = index;
+        }
+    }
+
+    if (selected_count == 0) {
+        return 0;
+    }
+
+    *chosen_move = moves.moves[
+        selected[next_random_value(seed) % (uint64_t)selected_count]
+    ];
+    return 1;
+}
+
+static int run_selfplay_dataset(
+    int games,
+    int depth,
+    int max_plies,
+    const char *output_path
+) {
+    std::ofstream output(output_path);
+    int game;
+    int written = 0;
+
+    if (!output.is_open()) {
+        fprintf(stderr, "Error: Could not write %s\n", output_path);
+        return 0;
+    }
+
+    for (game = 0; game < games; ++game) {
+        Position position;
+        std::vector<std::string> positions;
+        uint64_t seed = UINT64_C(0x9e3779b97f4a7c15) ^
+                        (uint64_t)(game + 1);
+        double result = 0.5;
+        int ply;
+
+        set_starting_position(&position);
+
+        for (ply = 0; ply < max_plies; ++ply) {
+            char fen[128];
+            Move move;
+            UndoState undo;
+
+            if (game_result(&position, ply, max_plies, &result)) {
+                break;
+            }
+            if (!position_to_fen(&position, fen, sizeof(fen))) {
+                fprintf(stderr, "Error: Could not write FEN\n");
+                return 0;
+            }
+            positions.push_back(fen);
+            if (!choose_selfplay_move(&position, depth, ply, &seed, &move) ||
+                !make_move(&position, move, &undo)) {
+                fprintf(stderr, "Error: Self play move failed\n");
+                return 0;
+            }
+        }
+
+        game_result(&position, max_plies, max_plies, &result);
+        for (size_t index = 0; index < positions.size(); ++index) {
+            output << result << " " << positions[index] << "\n";
+            written++;
+        }
+
+        std::cout << "selfplay game " << (game + 1)
+                  << " positions " << positions.size()
+                  << " result " << result << "\n";
+    }
+
+    std::cout << "selfplay dataset " << output_path
+              << " rows " << written << "\n";
     return 1;
 }
 
@@ -396,6 +601,46 @@ static int parse_time_limit(const char *text, int *time_limit_ms) {
     return 1;
 }
 
+static int parse_positive_int(
+    const char *text,
+    int minimum,
+    int maximum,
+    int *value
+) {
+    char *end;
+    long parsed;
+
+    if (text == 0 || value == 0) {
+        return 0;
+    }
+
+    parsed = strtol(text, &end, 10);
+    if (*text == '\0' || *end != '\0' ||
+        parsed < minimum || parsed > maximum) {
+        return 0;
+    }
+
+    *value = (int)parsed;
+    return 1;
+}
+
+static int parse_positive_double(const char *text, double *value) {
+    char *end;
+    double parsed;
+
+    if (text == 0 || value == 0) {
+        return 0;
+    }
+
+    parsed = strtod(text, &end);
+    if (*text == '\0' || *end != '\0' || parsed <= 0.0) {
+        return 0;
+    }
+
+    *value = parsed;
+    return 1;
+}
+
 int main(int argc, char **argv) {
     int depth;
     int time_limit_ms;
@@ -422,6 +667,50 @@ int main(int argc, char **argv) {
 
     if (argc == 3 && strcmp(argv[1], "eval") == 0) {
         return print_evaluation_trace(argv[2]) ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (argc == 3 && strcmp(argv[1], "features") == 0) {
+        return print_eval_features_json(argv[2])
+            ? EXIT_SUCCESS
+            : EXIT_FAILURE;
+    }
+
+    if (argc == 2 && strcmp(argv[1], "evalparams") == 0) {
+        return print_eval_params_json() ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (argc == 6 && strcmp(argv[1], "texel") == 0) {
+        int iterations;
+        double learning_rate;
+
+        if (!parse_positive_int(argv[3], 1, 100000, &iterations) ||
+            !parse_positive_double(argv[4], &learning_rate)) {
+            fprintf(stderr, "Error: Invalid Texel arguments\n");
+            return EXIT_FAILURE;
+        }
+
+        return run_texel_tuning(
+            argv[2],
+            iterations,
+            learning_rate,
+            argv[5]
+        ) ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (argc == 6 && strcmp(argv[1], "selfplaydata") == 0) {
+        int games;
+        int plies;
+
+        if (!parse_positive_int(argv[2], 1, 10000, &games) ||
+            !parse_depth(argv[3], &depth) ||
+            !parse_positive_int(argv[4], 1, 1000, &plies)) {
+            fprintf(stderr, "Error: Invalid self play data arguments\n");
+            return EXIT_FAILURE;
+        }
+
+        return run_selfplay_dataset(games, depth, plies, argv[5])
+            ? EXIT_SUCCESS
+            : EXIT_FAILURE;
     }
 
     if (argc == 4 && strcmp(argv[1], "search") == 0 &&

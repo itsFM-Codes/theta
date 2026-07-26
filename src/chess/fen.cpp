@@ -1,6 +1,8 @@
 #include "fen.h"
 
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static Piece piece_from_fen_character(char character) {
     switch (character) {
@@ -31,6 +33,67 @@ static Piece piece_from_fen_character(char character) {
         default:
             return PIECE_NONE;
     }
+}
+
+static char piece_to_fen_character(Piece piece) {
+    switch (piece) {
+        case PIECE_WHITE_PAWN:
+            return 'P';
+        case PIECE_WHITE_KNIGHT:
+            return 'N';
+        case PIECE_WHITE_BISHOP:
+            return 'B';
+        case PIECE_WHITE_ROOK:
+            return 'R';
+        case PIECE_WHITE_QUEEN:
+            return 'Q';
+        case PIECE_WHITE_KING:
+            return 'K';
+        case PIECE_BLACK_PAWN:
+            return 'p';
+        case PIECE_BLACK_KNIGHT:
+            return 'n';
+        case PIECE_BLACK_BISHOP:
+            return 'b';
+        case PIECE_BLACK_ROOK:
+            return 'r';
+        case PIECE_BLACK_QUEEN:
+            return 'q';
+        case PIECE_BLACK_KING:
+            return 'k';
+        default:
+            return '\0';
+    }
+}
+
+static int append_text(char *fen, int size, int *offset, const char *text) {
+    int written;
+
+    if (fen == 0 || offset == 0 || text == 0 || *offset >= size) {
+        return 0;
+    }
+
+    written = snprintf(fen + *offset, size - *offset, "%s", text);
+    if (written < 0 || written >= size - *offset) {
+        return 0;
+    }
+    *offset += written;
+    return 1;
+}
+
+static int append_character(char *fen, int size, int *offset, char character) {
+    char text[2];
+
+    text[0] = character;
+    text[1] = '\0';
+    return append_text(fen, size, offset, text);
+}
+
+static int append_number(char *fen, int size, int *offset, int number) {
+    char text[32];
+
+    snprintf(text, sizeof(text), "%d", number);
+    return append_text(fen, size, offset, text);
 }
 
 static int parse_board(Position *position, const char **cursor) {
@@ -201,4 +264,119 @@ int position_from_fen(Position *position, const char *fen) {
 
     *position = parsed;
     return 1;
+}
+
+int position_to_fen(const Position *position, char *fen, int size) {
+    int offset = 0;
+    int row;
+
+    if (position == 0 || fen == 0 || size <= 0) {
+        return 0;
+    }
+    fen[0] = '\0';
+
+    for (row = 0; row < BOARD_SIZE; ++row) {
+        int empty_count = 0;
+        int column;
+
+        for (column = 0; column < BOARD_SIZE; ++column) {
+            Piece piece = position_piece_at_coordinates(position, row, column);
+
+            if (piece == PIECE_NONE) {
+                empty_count++;
+                continue;
+            }
+
+            if (empty_count > 0) {
+                if (!append_character(
+                        fen,
+                        size,
+                        &offset,
+                        (char)('0' + empty_count)
+                    )) {
+                    return 0;
+                }
+                empty_count = 0;
+            }
+            if (!append_character(
+                    fen,
+                    size,
+                    &offset,
+                    piece_to_fen_character(piece)
+                )) {
+                return 0;
+            }
+        }
+
+        if (empty_count > 0 &&
+            !append_character(fen, size, &offset, (char)('0' + empty_count))) {
+            return 0;
+        }
+        if (row < BOARD_SIZE - 1 &&
+            !append_character(fen, size, &offset, '/')) {
+            return 0;
+        }
+    }
+
+    if (!append_character(fen, size, &offset, ' ') ||
+        !append_character(
+            fen,
+            size,
+            &offset,
+            position->side_to_move == COLOR_BLACK ? 'b' : 'w'
+        ) ||
+        !append_character(fen, size, &offset, ' ')) {
+        return 0;
+    }
+
+    if (position->castling_rights == CASTLING_NONE) {
+        if (!append_character(fen, size, &offset, '-')) {
+            return 0;
+        }
+    } else {
+        if ((position->castling_rights & CASTLING_WHITE_KING_SIDE) != 0 &&
+            !append_character(fen, size, &offset, 'K')) {
+            return 0;
+        }
+        if ((position->castling_rights & CASTLING_WHITE_QUEEN_SIDE) != 0 &&
+            !append_character(fen, size, &offset, 'Q')) {
+            return 0;
+        }
+        if ((position->castling_rights & CASTLING_BLACK_KING_SIDE) != 0 &&
+            !append_character(fen, size, &offset, 'k')) {
+            return 0;
+        }
+        if ((position->castling_rights & CASTLING_BLACK_QUEEN_SIDE) != 0 &&
+            !append_character(fen, size, &offset, 'q')) {
+            return 0;
+        }
+    }
+
+    if (!append_character(fen, size, &offset, ' ')) {
+        return 0;
+    }
+
+    if (is_valid_square(position->en_passant_square)) {
+        if (!append_character(
+                fen,
+                size,
+                &offset,
+                (char)('a' + square_column(position->en_passant_square))
+            ) ||
+            !append_character(
+                fen,
+                size,
+                &offset,
+                (char)('8' - square_row(position->en_passant_square))
+            )) {
+            return 0;
+        }
+    } else if (!append_character(fen, size, &offset, '-')) {
+        return 0;
+    }
+
+    return append_character(fen, size, &offset, ' ') &&
+           append_number(fen, size, &offset, position->halfmove_clock) &&
+           append_character(fen, size, &offset, ' ') &&
+           append_number(fen, size, &offset, position->fullmove_number);
 }

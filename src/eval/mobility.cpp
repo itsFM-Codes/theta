@@ -1,4 +1,5 @@
 #include "mobility.h"
+#include "eval_params.h"
 
 static int sliding_mobility(
     const Position *position,
@@ -106,6 +107,7 @@ static int knight_mobility(const Position *position, int square, Color color) {
 int mobility_score(const Position *position) {
     int score = 0;
     uint64_t pieces;
+    const EvalParams *params = current_eval_params();
 
     if (position == 0) {
         return 0;
@@ -121,13 +123,14 @@ int mobility_score(const Position *position) {
 
         pieces &= pieces - 1;
         if (type == PIECE_TYPE_KNIGHT) {
-            value = knight_mobility(position, square, piece_color(piece)) * 2;
+            value = knight_mobility(position, square, piece_color(piece)) *
+                    params->knight_mobility_weight;
         } else if (type == PIECE_TYPE_BISHOP) {
-            weight = 3;
+            weight = params->bishop_mobility_weight;
         } else if (type == PIECE_TYPE_ROOK) {
-            weight = 2;
+            weight = params->rook_mobility_weight;
         } else if (type == PIECE_TYPE_QUEEN) {
-            weight = 1;
+            weight = params->queen_mobility_weight;
         } else {
             continue;
         }
