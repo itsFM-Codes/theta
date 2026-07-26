@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <string.h>
 
 #include "src/chess/fen.h"
 #include "src/chess/movegen.h"
@@ -16,6 +17,12 @@ int main(void) {
     assert(position.side_to_move == COLOR_WHITE);
     assert(position.castling_rights == CASTLING_ALL);
     assert(position.en_passant_square == NO_SQUARE);
+    {
+        char written[128];
+
+        assert(position_to_fen(&position, written, sizeof(written)));
+        assert(strcmp(written, starting_fen) == 0);
+    }
 
     generate_legal_moves(&position, &moves);
     assert(moves.count == 20);

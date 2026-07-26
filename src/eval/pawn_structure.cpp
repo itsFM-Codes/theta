@@ -1,21 +1,14 @@
 #include "pawn_structure.h"
+#include "eval_params.h"
 
 #include <stdint.h>
 
-#define DOUBLED_PAWN_PENALTY 12
-#define ISOLATED_PAWN_PENALTY 10
-#define PAWN_ISLAND_PENALTY 6
-#define BACKWARD_PAWN_PENALTY 8
-#define CANDIDATE_PASSED_PAWN_BONUS 6
-#define SUPPORTED_PASSED_PAWN_BONUS 6
-#define CONNECTED_PASSED_PAWN_BONUS 5
-#define BLOCKED_PASSED_PAWN_PENALTY 8
-#define PASSED_PAWN_KING_DISTANCE_SCALE 2
 #define PAWN_HASH_SIZE (1 << 14)
 #define FILE_A_MASK UINT64_C(0x0101010101010101)
 
 typedef struct PawnHashEntry {
     uint64_t key;
+    unsigned int params_generation;
     int score;
     int is_valid;
 } PawnHashEntry;
@@ -134,7 +127,8 @@ static int distance_between_squares(int first, int second) {
 static int passed_pawn_king_distance_bonus(
     const Position *position,
     int square,
-    Color color
+    Color color,
+    const EvalParams *params
 ) {
     int own_king = king_square(position, color);
     int opposing_king = king_square(position, opposite_color(color));
@@ -153,7 +147,7 @@ static int passed_pawn_king_distance_bonus(
     own_distance = distance_between_squares(own_king, square);
     opposing_distance = distance_between_squares(opposing_king, promotion_square);
     bonus = (opposing_distance - own_distance) *
-            PASSED_PAWN_KING_DISTANCE_SCALE;
+            params->passed_pawn_king_distance_scale;
 
     if (bonus > 16) {
         return 16;
@@ -373,7 +367,11 @@ static int pawn_island_count(const Position *position, Color color) {
     return islands;
 }
 
-static int side_pawn_structure_score(const Position *position, Color color) {
+static int side_pawn_structure_score(
+    const Position *position,
+    Color color,
+    const EvalParams *params
+) {
     int score = 0;
     int column;
     int square;
@@ -382,14 +380,14 @@ static int side_pawn_structure_score(const Position *position, Color color) {
     uint64_t pawns;
 
     if (islands > 1) {
-        score -= (islands - 1) * PAWN_ISLAND_PENALTY;
+        score -= (islands - 1) * params->pawn_island_penalty;
     }
 
     for (column = 0; column < BOARD_SIZE; ++column) {
         int count = count_pawns_on_file(position, color, column);
 
         if (count > 1) {
-            score -= (count - 1) * DOUBLED_PAWN_PENALTY;
+            score -= (count - 1) * params->doubled_pawn_penalty;
         }
     }
 
@@ -412,7 +410,7 @@ static int side_pawn_structure_score(const Position *position, Color color) {
         }
 
         if (!has_adjacent_pawn) {
-            score -= ISOLATED_PAWN_PENALTY;
+            score -= params->isolated_pawn_penalty;
         }
 
         if (pawn_is_passed(position, square, color)) {
@@ -421,26 +419,31 @@ static int side_pawn_structure_score(const Position *position, Color color) {
                 : square_row(square) - 1;
 
             score += passed_pawn_bonus(square, color);
-            score += passed_pawn_king_distance_bonus(position, square, color);
+            score += passed_pawn_king_distance_bonus(
+                position,
+                square,
+                color,
+                params
+            );
             if (pawn_is_supported(position, square, color)) {
-                score += SUPPORTED_PASSED_PAWN_BONUS + advancement * 2;
+                score += params->supported_passed_pawn_bonus + advancement * 2;
             }
             if (pawn_is_connected_passed(position, square, color)) {
-                score += CONNECTED_PASSED_PAWN_BONUS + advancement * 2;
+                score += params->connected_passed_pawn_bonus + advancement * 2;
             }
             if (pawn_is_blocked(position, square, color)) {
-                score -= BLOCKED_PASSED_PAWN_PENALTY + advancement * 2;
+                score -= params->blocked_passed_pawn_penalty + advancement * 2;
             }
         } else if (pawn_is_candidate_passed(position, square, color)) {
             int advancement = color == COLOR_WHITE
                 ? 6 - square_row(square)
                 : square_row(square) - 1;
 
-            score += CANDIDATE_PASSED_PAWN_BONUS + advancement * 3;
+            score += params->candidate_passed_pawn_bonus + advancement * 3;
         }
 
         if (pawn_is_backward(position, square, color)) {
-            score -= BACKWARD_PAWN_PENALTY;
+            score -= params->backward_pawn_penalty;
         }
     }
 
@@ -451,6 +454,7 @@ int pawn_structure_score(const Position *position) {
     uint64_t key;
     PawnHashEntry *entry;
     int score;
+    const EvalParams *params = current_eval_params();
 
     if (position == 0) {
         return 0;
@@ -458,13 +462,15 @@ int pawn_structure_score(const Position *position) {
 
     key = pawn_structure_key(position);
     entry = &pawn_hash[key % PAWN_HASH_SIZE];
-    if (entry->is_valid && entry->key == key) {
+    if (entry->is_valid && entry->key == key &&
+        entry->params_generation == eval_params_generation()) {
         return entry->score;
     }
 
-    score = side_pawn_structure_score(position, COLOR_WHITE) -
-            side_pawn_structure_score(position, COLOR_BLACK);
+    score = side_pawn_structure_score(position, COLOR_WHITE, params) -
+            side_pawn_structure_score(position, COLOR_BLACK, params);
     entry->key = key;
+    entry->params_generation = eval_params_generation();
     entry->score = score;
     entry->is_valid = 1;
     return score;

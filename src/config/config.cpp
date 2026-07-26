@@ -7,7 +7,16 @@
 #include <errno.h>
 #include <limits.h>
 
+#include "src/eval/eval_params.h"
+
 EngineConfig g_config;
+
+typedef struct ConfigIntTarget {
+    const char *key;
+    int *value;
+    int minimum;
+    int maximum;
+} ConfigIntTarget;
 
 static char *trim(char *text) {
     char *end;
@@ -18,7 +27,7 @@ static char *trim(char *text) {
 
     end = text + strlen(text);
     while (end > text && isspace((unsigned char)end[-1])) {
-        end--;
+        end -= 1;
     }
     *end = '\0';
 
@@ -64,6 +73,37 @@ static int parse_bool(const char *text, int *value) {
     return 0;
 }
 
+static int set_config_int_target(
+    const ConfigIntTarget *targets,
+    int count,
+    const char *key,
+    int number,
+    int line_number
+) {
+    int index;
+
+    for (index = 0; index < count; ++index) {
+        if (strcmp(key, targets[index].key) != 0) {
+            continue;
+        }
+        if (number < targets[index].minimum ||
+            number > targets[index].maximum) {
+            fprintf(
+                stderr,
+                "Warning: %s must be between %d and %d on line %d\n",
+                key,
+                targets[index].minimum,
+                targets[index].maximum,
+                line_number
+            );
+            return 1;
+        }
+        *targets[index].value = number;
+        return 1;
+    }
+    return 0;
+}
+
 void set_default_config(EngineConfig *config) {
     config->max_depth = 6;
     config->allow_draws = 1;
@@ -71,10 +111,13 @@ void set_default_config(EngineConfig *config) {
 
 int load_config(const char *filename) {
     FILE *file = fopen(filename, "r");
+    EvalParams eval_params;
     char line[256];
     int line_number = 0;
 
     set_default_config(&g_config);
+    reset_current_eval_params();
+    eval_params = *current_eval_params();
 
     if (file == NULL) {
         fprintf(stderr, "Error: Could not open config file %s\n", filename);
@@ -87,6 +130,55 @@ int load_config(const char *filename) {
         char *equals;
         char *comment;
         int number;
+        ConfigIntTarget eval_targets[] = {
+            {"eval_material_scale", &eval_params.material_scale, 224, 288},
+            {"eval_piece_square_scale", &eval_params.piece_square_scale, 0, 512},
+            {"eval_mobility_scale", &eval_params.mobility_scale, 0, 512},
+            {"eval_pawn_structure_scale", &eval_params.pawn_structure_scale, 0, 512},
+            {"eval_king_safety_scale", &eval_params.king_safety_scale, 0, 512},
+            {"eval_piece_activity_scale", &eval_params.piece_activity_scale, 0, 512},
+            {"eval_threat_scale", &eval_params.threat_scale, 0, 512},
+            {"eval_space_scale", &eval_params.space_scale, 0, 512},
+            {"eval_tempo_bonus", &eval_params.tempo_bonus, -50, 50},
+            {"eval_pawn_value", &eval_params.piece_values[PIECE_TYPE_PAWN], 50, 200},
+            {"eval_knight_value", &eval_params.piece_values[PIECE_TYPE_KNIGHT], 200, 450},
+            {"eval_bishop_value", &eval_params.piece_values[PIECE_TYPE_BISHOP], 200, 450},
+            {"eval_rook_value", &eval_params.piece_values[PIECE_TYPE_ROOK], 350, 700},
+            {"eval_queen_value", &eval_params.piece_values[PIECE_TYPE_QUEEN], 700, 1200},
+            {"eval_knight_mobility_weight", &eval_params.knight_mobility_weight, 0, 8},
+            {"eval_bishop_mobility_weight", &eval_params.bishop_mobility_weight, 0, 8},
+            {"eval_rook_mobility_weight", &eval_params.rook_mobility_weight, 0, 8},
+            {"eval_queen_mobility_weight", &eval_params.queen_mobility_weight, 0, 8},
+            {"eval_doubled_pawn_penalty", &eval_params.doubled_pawn_penalty, 0, 50},
+            {"eval_isolated_pawn_penalty", &eval_params.isolated_pawn_penalty, 0, 50},
+            {"eval_pawn_island_penalty", &eval_params.pawn_island_penalty, 0, 50},
+            {"eval_backward_pawn_penalty", &eval_params.backward_pawn_penalty, 0, 50},
+            {"eval_candidate_passed_pawn_bonus", &eval_params.candidate_passed_pawn_bonus, 0, 80},
+            {"eval_supported_passed_pawn_bonus", &eval_params.supported_passed_pawn_bonus, 0, 80},
+            {"eval_connected_passed_pawn_bonus", &eval_params.connected_passed_pawn_bonus, 0, 80},
+            {"eval_blocked_passed_pawn_penalty", &eval_params.blocked_passed_pawn_penalty, 0, 80},
+            {"eval_passed_pawn_king_distance_scale", &eval_params.passed_pawn_king_distance_scale, 0, 10},
+            {"eval_pawn_shield_bonus", &eval_params.pawn_shield_bonus, 0, 50},
+            {"eval_semi_open_file_penalty", &eval_params.semi_open_file_penalty, 0, 50},
+            {"eval_open_file_penalty", &eval_params.open_file_penalty, 0, 50},
+            {"eval_king_ring_attack_unit", &eval_params.king_ring_attack_unit, 0, 20},
+            {"eval_king_danger_quadratic_divisor", &eval_params.king_danger_quadratic_divisor, 1, 100},
+            {"eval_max_king_danger", &eval_params.max_king_danger, 0, 400},
+            {"eval_rook_file_pressure", &eval_params.rook_file_pressure, 0, 50},
+            {"eval_queen_file_pressure", &eval_params.queen_file_pressure, 0, 80},
+            {"eval_bishop_pair_middlegame_bonus", &eval_params.bishop_pair_middlegame_bonus, 0, 100},
+            {"eval_bishop_pair_endgame_bonus", &eval_params.bishop_pair_endgame_bonus, 0, 120},
+            {"eval_semi_open_rook_bonus", &eval_params.semi_open_rook_bonus, 0, 80},
+            {"eval_open_rook_bonus", &eval_params.open_rook_bonus, 0, 80},
+            {"eval_rook_seventh_rank_bonus", &eval_params.rook_seventh_rank_bonus, 0, 80},
+            {"eval_knight_outpost_bonus", &eval_params.knight_outpost_bonus, 0, 80},
+            {"eval_bad_bishop_pawn_penalty", &eval_params.bad_bishop_pawn_penalty, 0, 30},
+            {"eval_bad_bishop_mobility_penalty", &eval_params.bad_bishop_mobility_penalty, 0, 60},
+            {"eval_trapped_minor_penalty", &eval_params.trapped_minor_penalty, 0, 80},
+            {"eval_pawn_threat_base", &eval_params.pawn_threat_base, 0, 80},
+            {"eval_hanging_piece_divisor", &eval_params.hanging_piece_divisor, 1, 100},
+            {"eval_safe_space_bonus", &eval_params.safe_space_bonus, 0, 20}
+        };
 
         line_number++;
         comment = strpbrk(line, "#;");
@@ -127,6 +219,16 @@ int load_config(const char *filename) {
             continue;
         }
 
+        if (set_config_int_target(
+                eval_targets,
+                (int)(sizeof(eval_targets) / sizeof(eval_targets[0])),
+                key,
+                number,
+                line_number
+            )) {
+            continue;
+        }
+
         if (strcmp(key, "threads") == 0) {
             fprintf(
                 stderr,
@@ -144,5 +246,6 @@ int load_config(const char *filename) {
     }
 
     fclose(file);
+    set_current_eval_params(&eval_params);
     return 1;
 }

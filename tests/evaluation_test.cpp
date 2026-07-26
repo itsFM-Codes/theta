@@ -432,7 +432,7 @@ static void test_evaluation_trace_matches_total(void) {
     assert(trace.total == score);
     assert(trace.total == trace.material_and_piece_square + trace.mobility +
            trace.pawn_structure + trace.king_safety + trace.piece_activity +
-           trace.threats + trace.space);
+           trace.threats + trace.space + trace.tempo);
 }
 
 static void test_pawn_hash_tracks_blockers(void) {

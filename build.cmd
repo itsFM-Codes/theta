@@ -116,6 +116,7 @@ echo [BUILD] evaluation_test
     src\chess\move.cpp ^
     src\chess\movegen.cpp ^
     src\chess\zobrist.cpp ^
+    src\eval\eval_params.cpp ^
     src\eval\evaluation.cpp ^
     src\eval\king_safety.cpp ^
     src\eval\mobility.cpp ^
@@ -153,6 +154,7 @@ echo [BUILD] static_exchange_test
     src\chess\move.cpp ^
     src\chess\movegen.cpp ^
     src\chess\zobrist.cpp ^
+    src\eval\eval_params.cpp ^
     src\engine\static_exchange.cpp ^
     -o build\static_exchange_test.exe
 if errorlevel 1 exit /b 1
@@ -177,6 +179,7 @@ echo [BUILD] search_test
     src\engine\quiescence.cpp ^
     src\engine\static_exchange.cpp ^
     src\engine\transposition_table.cpp ^
+    src\eval\eval_params.cpp ^
     src\eval\evaluation.cpp ^
     src\eval\king_safety.cpp ^
     src\eval\mobility.cpp ^

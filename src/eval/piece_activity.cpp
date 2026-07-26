@@ -1,14 +1,6 @@
 #include "piece_activity.h"
+#include "eval_params.h"
 
-#define BISHOP_PAIR_MIDDLEGAME_BONUS 22
-#define BISHOP_PAIR_ENDGAME_BONUS 40
-#define SEMI_OPEN_ROOK_BONUS 12
-#define OPEN_ROOK_BONUS 8
-#define ROOK_SEVENTH_RANK_BONUS 16
-#define KNIGHT_OUTPOST_BONUS 18
-#define BAD_BISHOP_PAWN_PENALTY 3
-#define BAD_BISHOP_MOBILITY_PENALTY 8
-#define TRAPPED_MINOR_PENALTY 12
 #define FILE_A_MASK UINT64_C(0x0101010101010101)
 
 static int file_has_pawn(const Position *position, int column, Color color) {
@@ -137,7 +129,8 @@ static int pawns_on_square_color(
 static int bad_bishop_penalty(
     const Position *position,
     int square,
-    Color color
+    Color color,
+    const EvalParams *params
 ) {
     int square_color = (square_row(square) + square_column(square)) & 1;
     int same_color_pawns = pawns_on_square_color(
@@ -145,11 +138,11 @@ static int bad_bishop_penalty(
         color,
         square_color
     );
-    int penalty = same_color_pawns * BAD_BISHOP_PAWN_PENALTY;
+    int penalty = same_color_pawns * params->bad_bishop_pawn_penalty;
 
     if (same_color_pawns >= 4 &&
         bishop_mobility(position, square, color) <= 5) {
-        penalty += BAD_BISHOP_MOBILITY_PENALTY;
+        penalty += params->bad_bishop_mobility_penalty;
     }
 
     return penalty;
@@ -184,7 +177,8 @@ static int rook_on_seventh_rank(int square, Color color) {
 static int side_piece_activity_score(
     const Position *position,
     Color color,
-    int endgame_weight
+    int endgame_weight,
+    const EvalParams *params
 ) {
     Piece bishop = color == COLOR_WHITE ? PIECE_WHITE_BISHOP : PIECE_BLACK_BISHOP;
     Piece knight = color == COLOR_WHITE ? PIECE_WHITE_KNIGHT : PIECE_BLACK_KNIGHT;
@@ -203,16 +197,16 @@ static int side_piece_activity_score(
         if (piece == bishop) {
             int mobility = bishop_mobility(position, square, color);
             bishops++;
-            score -= bad_bishop_penalty(position, square, color);
+            score -= bad_bishop_penalty(position, square, color, params);
             if (mobility <= 2) {
-                score -= (3 - mobility) * TRAPPED_MINOR_PENALTY;
+                score -= (3 - mobility) * params->trapped_minor_penalty;
             }
         } else if (piece == knight) {
             if (knight_is_outpost(position, square, color)) {
-                score += KNIGHT_OUTPOST_BONUS;
+                score += params->knight_outpost_bonus;
             }
             if (knight_mobility(position, square, color) <= 1) {
-                score -= TRAPPED_MINOR_PENALTY;
+                score -= params->trapped_minor_penalty;
             }
         } else if (piece == rook) {
             int column = square_column(square);
@@ -224,29 +218,31 @@ static int side_piece_activity_score(
             );
 
             if (!own_pawn) {
-                score += SEMI_OPEN_ROOK_BONUS;
+                score += params->semi_open_rook_bonus;
 
                 if (!opposing_pawn) {
-                    score += OPEN_ROOK_BONUS;
+                    score += params->open_rook_bonus;
                 }
             }
 
             if (rook_on_seventh_rank(square, color)) {
-                score += ROOK_SEVENTH_RANK_BONUS;
+                score += params->rook_seventh_rank_bonus;
             }
         }
     }
 
     if (bishops >= 2) {
-        score += BISHOP_PAIR_MIDDLEGAME_BONUS +
-            (BISHOP_PAIR_ENDGAME_BONUS - BISHOP_PAIR_MIDDLEGAME_BONUS) *
-            endgame_weight / 256;
+        score += params->bishop_pair_middlegame_bonus +
+            (params->bishop_pair_endgame_bonus -
+             params->bishop_pair_middlegame_bonus) * endgame_weight / 256;
     }
 
     return score;
 }
 
 int piece_activity_score(const Position *position, int endgame_weight) {
+    const EvalParams *params = current_eval_params();
+
     if (position == 0) {
         return 0;
     }
@@ -257,6 +253,15 @@ int piece_activity_score(const Position *position, int endgame_weight) {
         endgame_weight = 256;
     }
 
-    return side_piece_activity_score(position, COLOR_WHITE, endgame_weight) -
-           side_piece_activity_score(position, COLOR_BLACK, endgame_weight);
+    return side_piece_activity_score(
+        position,
+        COLOR_WHITE,
+        endgame_weight,
+        params
+    ) - side_piece_activity_score(
+        position,
+        COLOR_BLACK,
+        endgame_weight,
+        params
+    );
 }
