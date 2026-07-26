@@ -2,13 +2,14 @@
 #define EVALUATION_H
 
 #include "src/chess/position.h"
+#include "eval_params.h"
 
-#define PAWN_VALUE 100
-#define KNIGHT_VALUE 320
-#define BISHOP_VALUE 330
-#define ROOK_VALUE 500
-#define QUEEN_VALUE 900
-#define KING_VALUE 0
+#define PAWN_VALUE eval_piece_type_value(PIECE_TYPE_PAWN)
+#define KNIGHT_VALUE eval_piece_type_value(PIECE_TYPE_KNIGHT)
+#define BISHOP_VALUE eval_piece_type_value(PIECE_TYPE_BISHOP)
+#define ROOK_VALUE eval_piece_type_value(PIECE_TYPE_ROOK)
+#define QUEEN_VALUE eval_piece_type_value(PIECE_TYPE_QUEEN)
+#define KING_VALUE eval_piece_type_value(PIECE_TYPE_KING)
 
 typedef struct EvaluationTrace {
     int material_and_piece_square;
@@ -18,6 +19,7 @@ typedef struct EvaluationTrace {
     int piece_activity;
     int threats;
     int space;
+    int tempo;
     int total;
 } EvaluationTrace;
 

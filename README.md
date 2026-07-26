@@ -118,6 +118,12 @@ Print an evaluation trace for a FEN as JSON:
 build\theta.exe eval "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 ```
 
+Print the tunable evaluation feature vector for a FEN:
+
+```cmd
+build\theta.exe features "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+```
+
 Search a FEN to a fixed depth:
 
 ```cmd
@@ -129,6 +135,20 @@ Search with a depth and movetime limit in milliseconds:
 ```cmd
 build\theta.exe search 12 1000 "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 ```
+
+Generate self play positions for evaluation tuning:
+
+```cmd
+build\theta.exe selfplaydata 20 2 120 build\tuning.txt
+```
+
+Tune the top level evaluation feature weights with Texel tuning:
+
+```cmd
+build\theta.exe texel build\tuning.txt 200 4.0 build\tuned_eval.conf
+```
+
+The generated config fragment can be pasted into [config/config.conf](config/config.conf).
 
 ## Testing
 
@@ -155,6 +175,8 @@ Current options include:
 - `max_depth`, the maximum accepted search depth
 - `allow_draw`, which controls whether the engine is willing to choose drawing
   lines when alternatives exist
+- Tunable evaluation weights such as `eval_mobility_scale`,
+  `eval_king_safety_scale`, and `eval_tempo_bonus`
 
 Multi-threaded search is not implemented yet; the UCI `Threads` option currently
 reports a fixed single worker.

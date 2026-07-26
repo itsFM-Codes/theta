@@ -3,10 +3,6 @@
 #include "src/chess/movegen.h"
 #include "evaluation.h"
 
-#define PAWN_THREAT_BASE 12
-#define HANGING_PIECE_DIVISOR 25
-#define SAFE_SPACE_BONUS 3
-
 static int strategic_piece_value(Piece piece) {
     switch (piece_type(piece)) {
         case PIECE_TYPE_PAWN: return PAWN_VALUE;
@@ -41,7 +37,11 @@ static int pawn_controls_square(
     return 0;
 }
 
-static int side_threat_score(const Position *position, Color color) {
+static int side_threat_score(
+    const Position *position,
+    Color color,
+    const EvalParams *params
+) {
     Color enemy = opposite_color(color);
     int score = 0;
     uint64_t targets = position->color_occupied[enemy];
@@ -60,26 +60,32 @@ static int side_threat_score(const Position *position, Color color) {
         value = strategic_piece_value(target);
         if (type != PIECE_TYPE_PAWN &&
             pawn_controls_square(position, color, square)) {
-            score += PAWN_THREAT_BASE + value / 32;
+            score += params->pawn_threat_base + value / 32;
         }
 
         if (is_square_attacked(position, square, color) &&
             !is_square_attacked(position, square, enemy)) {
-            score += value / HANGING_PIECE_DIVISOR;
+            score += value / params->hanging_piece_divisor;
         }
     }
     return score;
 }
 
 int threat_score(const Position *position) {
+    const EvalParams *params = current_eval_params();
+
     if (position == 0) {
         return 0;
     }
-    return side_threat_score(position, COLOR_WHITE) -
-           side_threat_score(position, COLOR_BLACK);
+    return side_threat_score(position, COLOR_WHITE, params) -
+           side_threat_score(position, COLOR_BLACK, params);
 }
 
-static int side_space_score(const Position *position, Color color) {
+static int side_space_score(
+    const Position *position,
+    Color color,
+    const EvalParams *params
+) {
     Color enemy = opposite_color(color);
     int first_row = color == COLOR_WHITE ? 2 : 3;
     int last_row = color == COLOR_WHITE ? 4 : 5;
@@ -97,16 +103,18 @@ static int side_space_score(const Position *position, Color color) {
                 pawn_controls_square(position, enemy, square)) {
                 continue;
             }
-            score += SAFE_SPACE_BONUS;
+            score += params->safe_space_bonus;
         }
     }
     return score;
 }
 
 int space_score(const Position *position) {
+    const EvalParams *params = current_eval_params();
+
     if (position == 0) {
         return 0;
     }
-    return side_space_score(position, COLOR_WHITE) -
-           side_space_score(position, COLOR_BLACK);
+    return side_space_score(position, COLOR_WHITE, params) -
+           side_space_score(position, COLOR_BLACK, params);
 }

@@ -1,15 +1,8 @@
 #include "king_safety.h"
 
+#include "eval_params.h"
 #include "src/chess/movegen.h"
 
-#define PAWN_SHIELD_BONUS 12
-#define SEMI_OPEN_FILE_PENALTY 10
-#define OPEN_FILE_PENALTY 5
-#define KING_RING_ATTACK_UNIT 3
-#define KING_DANGER_QUADRATIC_DIVISOR 12
-#define MAX_KING_DANGER 180
-#define ROOK_FILE_PRESSURE 7
-#define QUEEN_FILE_PRESSURE 11
 #define FILE_A_MASK UINT64_C(0x0101010101010101)
 
 static int file_has_pawn(const Position *position, int column, Color color) {
@@ -43,7 +36,8 @@ static int square_distance(int first, int second) {
 static int king_attack_units(
     const Position *position,
     int king_square,
-    Color defending_color
+    Color defending_color,
+    const EvalParams *params
 ) {
     Color attacking_color = opposite_color(defending_color);
     int king_row = square_row(king_square);
@@ -62,7 +56,7 @@ static int king_attack_units(
             }
             ring_square = make_square(row, column);
             if (is_square_attacked(position, ring_square, attacking_color)) {
-                units += KING_RING_ATTACK_UNIT;
+                units += params->king_ring_attack_unit;
             }
         }
     }
@@ -133,7 +127,8 @@ static int pawn_storm_danger(
 static int major_piece_file_pressure(
     const Position *position,
     int king_square,
-    Color defending_color
+    Color defending_color,
+    const EvalParams *params
 ) {
     Color attacking_color = opposite_color(defending_color);
     int king_column = square_column(king_square);
@@ -161,14 +156,18 @@ static int major_piece_file_pressure(
         }
 
         pressure += piece_type(piece) == PIECE_TYPE_QUEEN
-            ? QUEEN_FILE_PRESSURE
-            : ROOK_FILE_PRESSURE;
+            ? params->queen_file_pressure
+            : params->rook_file_pressure;
     }
 
     return pressure;
 }
 
-static int side_king_safety_score(const Position *position, Color color) {
+static int side_king_safety_score(
+    const Position *position,
+    Color color,
+    const EvalParams *params
+) {
     int score = 0;
     int king_square = find_king_square(position, color);
     int king_row;
@@ -196,27 +195,27 @@ static int side_king_safety_score(const Position *position, Color color) {
 
         if (is_valid_coordinate(shield_row, column) &&
             position_piece_at_coordinates(position, shield_row, column) == pawn) {
-            score += PAWN_SHIELD_BONUS;
+            score += params->pawn_shield_bonus;
         }
 
         own_pawn = file_has_pawn(position, column, color);
         opposing_pawn = file_has_pawn(position, column, opposite_color(color));
 
         if (!own_pawn) {
-            score -= SEMI_OPEN_FILE_PENALTY;
+            score -= params->semi_open_file_penalty;
 
             if (!opposing_pawn) {
-                score -= OPEN_FILE_PENALTY;
+                score -= params->open_file_penalty;
             }
         }
     }
 
-    danger = king_attack_units(position, king_square, color) +
+    danger = king_attack_units(position, king_square, color, params) +
              pawn_storm_danger(position, king_square, color) +
-             major_piece_file_pressure(position, king_square, color);
-    danger += danger * danger / KING_DANGER_QUADRATIC_DIVISOR;
-    if (danger > MAX_KING_DANGER) {
-        danger = MAX_KING_DANGER;
+             major_piece_file_pressure(position, king_square, color, params);
+    danger += danger * danger / params->king_danger_quadratic_divisor;
+    if (danger > params->max_king_danger) {
+        danger = params->max_king_danger;
     }
     score -= danger;
 
@@ -225,6 +224,7 @@ static int side_king_safety_score(const Position *position, Color color) {
 
 int king_safety_score(const Position *position, int endgame_weight) {
     int score;
+    const EvalParams *params = current_eval_params();
 
     if (position == 0) {
         return 0;
@@ -236,8 +236,8 @@ int king_safety_score(const Position *position, int endgame_weight) {
         endgame_weight = 256;
     }
 
-    score = side_king_safety_score(position, COLOR_WHITE) -
-            side_king_safety_score(position, COLOR_BLACK);
+    score = side_king_safety_score(position, COLOR_WHITE, params) -
+            side_king_safety_score(position, COLOR_BLACK, params);
 
     return score * (256 - endgame_weight) / 256;
 }
