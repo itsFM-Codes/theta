@@ -147,6 +147,228 @@ static int move_is_quiet(Move move) {
     return (move.flags & (MOVE_FLAG_CAPTURE | MOVE_FLAG_PROMOTION)) == 0;
 }
 
+static int search_piece_value(Piece piece) {
+    switch (piece_type(piece)) {
+        case PIECE_TYPE_PAWN:
+            return PAWN_VALUE;
+        case PIECE_TYPE_KNIGHT:
+            return KNIGHT_VALUE;
+        case PIECE_TYPE_BISHOP:
+            return BISHOP_VALUE;
+        case PIECE_TYPE_ROOK:
+            return ROOK_VALUE;
+        case PIECE_TYPE_QUEEN:
+            return QUEEN_VALUE;
+        default:
+            return 0;
+    }
+}
+
+static int attacks_valuable_piece(
+    const Position *position,
+    Piece attacker,
+    Piece target
+) {
+    int attacker_value;
+    int target_value;
+
+    if (position == 0 || target == PIECE_NONE ||
+        piece_color(target) == piece_color(attacker) ||
+        piece_type(target) == PIECE_TYPE_KING) {
+        return 0;
+    }
+
+    attacker_value = search_piece_value(attacker);
+    target_value = search_piece_value(target);
+    return target_value > attacker_value || target_value >= ROOK_VALUE;
+}
+
+static int pawn_move_attacks_valuable_piece(
+    const Position *position,
+    int square,
+    Color color
+) {
+    Piece attacker;
+    int row;
+    int column;
+    int direction;
+    int file;
+
+    if (position == 0 || color == COLOR_NONE) {
+        return 0;
+    }
+
+    attacker = position_piece_at(position, square);
+    row = square_row(square);
+    column = square_column(square);
+    direction = color == COLOR_WHITE ? -1 : 1;
+
+    for (file = column - 1; file <= column + 1; file += 2) {
+        int target_square = make_square(row + direction, file);
+
+        if (!is_valid_square(target_square)) {
+            continue;
+        }
+        if (attacks_valuable_piece(
+                position,
+                attacker,
+                position_piece_at(position, target_square)
+            )) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int knight_move_attacks_valuable_piece(
+    const Position *position,
+    int square
+) {
+    static const int KNIGHT_OFFSETS[8][2] = {
+        {-2, -1}, {-2, 1}, {-1, -2}, {-1, 2},
+        {1, -2}, {1, 2}, {2, -1}, {2, 1}
+    };
+    Piece attacker;
+    int row;
+    int column;
+    int index;
+
+    if (position == 0) {
+        return 0;
+    }
+
+    attacker = position_piece_at(position, square);
+    row = square_row(square);
+    column = square_column(square);
+
+    for (index = 0; index < 8; ++index) {
+        int target_square = make_square(
+            row + KNIGHT_OFFSETS[index][0],
+            column + KNIGHT_OFFSETS[index][1]
+        );
+
+        if (!is_valid_square(target_square)) {
+            continue;
+        }
+        if (attacks_valuable_piece(
+                position,
+                attacker,
+                position_piece_at(position, target_square)
+            )) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int sliding_move_attacks_valuable_piece(
+    const Position *position,
+    int square,
+    const int directions[][2],
+    int direction_count
+) {
+    Piece attacker;
+    int start_row;
+    int start_column;
+    int direction_index;
+
+    if (position == 0) {
+        return 0;
+    }
+
+    attacker = position_piece_at(position, square);
+    start_row = square_row(square);
+    start_column = square_column(square);
+
+    for (direction_index = 0;
+         direction_index < direction_count;
+         ++direction_index) {
+        int row = start_row + directions[direction_index][0];
+        int column = start_column + directions[direction_index][1];
+
+        while (is_valid_coordinate(row, column)) {
+            int target_square = make_square(row, column);
+            Piece target = position_piece_at(position, target_square);
+
+            if (target != PIECE_NONE) {
+                if (attacks_valuable_piece(position, attacker, target)) {
+                    return 1;
+                }
+                break;
+            }
+
+            row += directions[direction_index][0];
+            column += directions[direction_index][1];
+        }
+    }
+
+    return 0;
+}
+
+static int quiet_move_attacks_valuable_piece(
+    const Position *position,
+    Move move,
+    Color moving_color
+) {
+    static const int BISHOP_DIRECTIONS[4][2] = {
+        {-1, -1}, {-1, 1}, {1, -1}, {1, 1}
+    };
+    static const int ROOK_DIRECTIONS[4][2] = {
+        {-1, 0}, {1, 0}, {0, -1}, {0, 1}
+    };
+    static const int QUEEN_DIRECTIONS[8][2] = {
+        {-1, -1}, {-1, 1}, {1, -1}, {1, 1},
+        {-1, 0}, {1, 0}, {0, -1}, {0, 1}
+    };
+    Piece attacker;
+
+    if (position == 0 || !move_is_quiet(move) ||
+        moving_color == COLOR_NONE) {
+        return 0;
+    }
+
+    attacker = position_piece_at(position, move.to);
+    if (piece_color(attacker) != moving_color) {
+        return 0;
+    }
+
+    switch (piece_type(attacker)) {
+        case PIECE_TYPE_PAWN:
+            return pawn_move_attacks_valuable_piece(
+                position,
+                move.to,
+                moving_color
+            );
+        case PIECE_TYPE_KNIGHT:
+            return knight_move_attacks_valuable_piece(position, move.to);
+        case PIECE_TYPE_BISHOP:
+            return sliding_move_attacks_valuable_piece(
+                position,
+                move.to,
+                BISHOP_DIRECTIONS,
+                4
+            );
+        case PIECE_TYPE_ROOK:
+            return sliding_move_attacks_valuable_piece(
+                position,
+                move.to,
+                ROOK_DIRECTIONS,
+                4
+            );
+        case PIECE_TYPE_QUEEN:
+            return sliding_move_attacks_valuable_piece(
+                position,
+                move.to,
+                QUEEN_DIRECTIONS,
+                8
+            );
+        default:
+            return 0;
+    }
+}
+
 static int static_futility_margin(int depth, int improving) {
     int margin = STATIC_FUTILITY_MARGIN * depth;
 
@@ -631,6 +853,7 @@ skip_null_cutoff:
         int reduced = 0;
         int gives_check;
         int promotes_pawn;
+        int creates_threat = 0;
         int quiet_move;
         int see_score = 0;
         Color moving_color;
@@ -670,6 +893,13 @@ skip_null_cutoff:
 
         move_index = legal_move_count++;
         gives_check = position_is_in_check(position);
+        if (quiet_move && !gives_check) {
+            creates_threat = quiet_move_attacks_valuable_piece(
+                position,
+                move,
+                moving_color
+            );
+        }
 
         if (depth <= 4 && !is_pv_node && !in_check && move_index > 0 &&
             !quiet_move && (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
@@ -687,7 +917,8 @@ skip_null_cutoff:
                 is_pv_node,
                 improving
             ) &&
-            quiet_move && !gives_check) {
+            quiet_move && !gives_check && !promotes_pawn &&
+            !creates_threat) {
             if (context != 0) {
                 context->late_move_prunes++;
             }
@@ -697,6 +928,7 @@ skip_null_cutoff:
 
         if (depth <= 3 && !is_pv_node && !in_check && move_index > 0 &&
             quiet_move && !gives_check &&
+            !promotes_pawn && !creates_threat &&
             alpha > -SEARCH_CHECKMATE + MAX_PRINCIPAL_VARIATION &&
             static_score + static_futility_margin(depth, improving) <= alpha) {
             if (context != 0) {
@@ -724,6 +956,9 @@ skip_null_cutoff:
                 move
             );
 
+            if ((promotes_pawn || creates_threat) && reduction > 0) {
+                reduction--;
+            }
             if (reduction > 0) {
                 search_depth -= reduction;
                 reduced = 1;
