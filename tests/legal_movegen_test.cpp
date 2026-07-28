@@ -33,6 +33,7 @@ static void test_starting_position(void) {
     assert(perft(&position, 2) == 400);
     assert(perft(&position, 3) == 8902);
     assert(perft(&position, 4) == 197281);
+    assert(perft(&position, 5) == 4865609);
 }
 
 static void test_kiwipete_position(void) {
@@ -61,9 +62,37 @@ static void test_promotion_and_castling_position(void) {
     assert(perft(&position, 4) == 422333);
 }
 
+static void test_en_passant_and_rook_endgame_position(void) {
+    Position position;
+    const char *fen =
+        "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1";
+
+    assert(position_from_fen(&position, fen));
+    assert(perft(&position, 1) == 14);
+    assert(perft(&position, 2) == 191);
+    assert(perft(&position, 3) == 2812);
+    assert(perft(&position, 4) == 43238);
+    assert(perft(&position, 5) == 674624);
+}
+
+static void test_discovered_check_and_castling_position(void) {
+    Position position;
+    const char *fen =
+        "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R "
+        "w KQ - 1 8";
+
+    assert(position_from_fen(&position, fen));
+    assert(perft(&position, 1) == 44);
+    assert(perft(&position, 2) == 1486);
+    assert(perft(&position, 3) == 62379);
+    assert(perft(&position, 4) == 2103487);
+}
+
 int main(void) {
     test_starting_position();
     test_kiwipete_position();
     test_promotion_and_castling_position();
+    test_en_passant_and_rook_endgame_position();
+    test_discovered_check_and_castling_position();
     return 0;
 }
