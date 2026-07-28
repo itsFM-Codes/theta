@@ -448,7 +448,7 @@ static void search_from_command(
             : black_increment;
 
         if (remaining_time > 0) {
-            int divisor = moves_to_go > 0 ? moves_to_go : 30;
+            int divisor = moves_to_go > 0 ? moves_to_go : 24;
             int available_time = remaining_time - UCI_MOVE_OVERHEAD_MS;
 
             if (available_time < 1) {
