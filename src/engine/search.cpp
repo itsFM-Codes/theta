@@ -1105,7 +1105,7 @@ skip_null_cutoff:
                 &child_variation, context, 0
             );
 
-            if (score > alpha && score < beta && reduced) {
+            if (score > alpha && reduced) {
                 context->late_move_researches++;
                 score = -negamax(
                     position, depth - 1, -alpha - 1, -alpha, ply + 1, 1,
