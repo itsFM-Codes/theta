@@ -31,12 +31,15 @@ static void initialize_lmr_reductions(void) {
         for (move_index = 0; move_index < MAX_MOVES; ++move_index) {
             int reduction = 0;
 
-            if (depth >= 3 && move_index >= 4) {
+            if (depth >= 3 && move_index >= 3) {
                 reduction = 1;
-                if (depth >= 6 && move_index >= 8) {
+                if (depth >= 5 && move_index >= 6) {
                     reduction++;
                 }
-                if (depth >= 10 && move_index >= 16) {
+                if (depth >= 8 && move_index >= 12) {
+                    reduction++;
+                }
+                if (depth >= 12 && move_index >= 24) {
                     reduction++;
                 }
                 if (reduction > depth - 2) {
@@ -849,9 +852,9 @@ skip_null_cutoff:
 
         context->probcut_attempts++;
         if (context != 0) {
-            context->move_generations++;
+            context->tactical_move_generations++;
         }
-        generate_moves(position, &probcut_moves);
+        generate_tactical_moves(position, &probcut_moves);
         initialize_move_picker(
             &probcut_picker,
             position,
