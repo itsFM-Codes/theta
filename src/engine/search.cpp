@@ -31,12 +31,15 @@ static void initialize_lmr_reductions(void) {
         for (move_index = 0; move_index < MAX_MOVES; ++move_index) {
             int reduction = 0;
 
-            if (depth >= 3 && move_index >= 4) {
+            if (depth >= 3 && move_index >= 3) {
                 reduction = 1;
-                if (depth >= 6 && move_index >= 8) {
+                if (depth >= 5 && move_index >= 6) {
                     reduction++;
                 }
-                if (depth >= 10 && move_index >= 16) {
+                if (depth >= 8 && move_index >= 12) {
+                    reduction++;
+                }
+                if (depth >= 12 && move_index >= 24) {
                     reduction++;
                 }
                 if (reduction > depth - 2) {
@@ -307,6 +310,100 @@ static int sliding_move_attacks_valuable_piece(
     return 0;
 }
 
+static Piece first_piece_in_direction(
+    const Position *position,
+    int square,
+    int row_step,
+    int column_step
+) {
+    int row;
+    int column;
+
+    if (position == 0 || !is_valid_square(square)) {
+        return PIECE_NONE;
+    }
+
+    row = square_row(square) + row_step;
+    column = square_column(square) + column_step;
+    while (is_valid_coordinate(row, column)) {
+        Piece piece = position_piece_at_coordinates(position, row, column);
+
+        if (piece != PIECE_NONE) {
+            return piece;
+        }
+
+        row += row_step;
+        column += column_step;
+    }
+
+    return PIECE_NONE;
+}
+
+static int piece_slides_in_direction(
+    Piece piece,
+    int row_step,
+    int column_step
+) {
+    PieceType type = piece_type(piece);
+
+    if (type == PIECE_TYPE_QUEEN) {
+        return 1;
+    }
+
+    if (row_step != 0 && column_step != 0) {
+        return type == PIECE_TYPE_BISHOP;
+    }
+
+    return type == PIECE_TYPE_ROOK;
+}
+
+static int quiet_move_reveals_valuable_attack(
+    const Position *position,
+    int vacated_square,
+    Color moving_color
+) {
+    static const int DIRECTIONS[4][2] = {
+        {-1, -1}, {-1, 0}, {-1, 1}, {0, -1}
+    };
+    int index;
+
+    if (position == 0 || moving_color == COLOR_NONE ||
+        !is_valid_square(vacated_square)) {
+        return 0;
+    }
+
+    for (index = 0; index < 4; ++index) {
+        int row_step = DIRECTIONS[index][0];
+        int column_step = DIRECTIONS[index][1];
+        Piece forward = first_piece_in_direction(
+            position,
+            vacated_square,
+            row_step,
+            column_step
+        );
+        Piece backward = first_piece_in_direction(
+            position,
+            vacated_square,
+            -row_step,
+            -column_step
+        );
+
+        if (piece_color(forward) == moving_color &&
+            piece_slides_in_direction(forward, row_step, column_step) &&
+            attacks_valuable_piece(position, forward, backward)) {
+            return 1;
+        }
+
+        if (piece_color(backward) == moving_color &&
+            piece_slides_in_direction(backward, row_step, column_step) &&
+            attacks_valuable_piece(position, backward, forward)) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 static int quiet_move_attacks_valuable_piece(
     const Position *position,
     Move move,
@@ -336,37 +433,58 @@ static int quiet_move_attacks_valuable_piece(
 
     switch (piece_type(attacker)) {
         case PIECE_TYPE_PAWN:
-            return pawn_move_attacks_valuable_piece(
+            if (pawn_move_attacks_valuable_piece(
                 position,
                 move.to,
                 moving_color
-            );
+            )) {
+                return 1;
+            }
+            break;
         case PIECE_TYPE_KNIGHT:
-            return knight_move_attacks_valuable_piece(position, move.to);
+            if (knight_move_attacks_valuable_piece(position, move.to)) {
+                return 1;
+            }
+            break;
         case PIECE_TYPE_BISHOP:
-            return sliding_move_attacks_valuable_piece(
+            if (sliding_move_attacks_valuable_piece(
                 position,
                 move.to,
                 BISHOP_DIRECTIONS,
                 4
-            );
+            )) {
+                return 1;
+            }
+            break;
         case PIECE_TYPE_ROOK:
-            return sliding_move_attacks_valuable_piece(
+            if (sliding_move_attacks_valuable_piece(
                 position,
                 move.to,
                 ROOK_DIRECTIONS,
                 4
-            );
+            )) {
+                return 1;
+            }
+            break;
         case PIECE_TYPE_QUEEN:
-            return sliding_move_attacks_valuable_piece(
+            if (sliding_move_attacks_valuable_piece(
                 position,
                 move.to,
                 QUEEN_DIRECTIONS,
                 8
-            );
+            )) {
+                return 1;
+            }
+            break;
         default:
-            return 0;
+            break;
     }
+
+    return quiet_move_reveals_valuable_attack(
+        position,
+        move.from,
+        moving_color
+    );
 }
 
 static int static_futility_margin(int depth, int improving) {
@@ -734,9 +852,9 @@ skip_null_cutoff:
 
         context->probcut_attempts++;
         if (context != 0) {
-            context->move_generations++;
+            context->tactical_move_generations++;
         }
-        generate_moves(position, &probcut_moves);
+        generate_tactical_moves(position, &probcut_moves);
         initialize_move_picker(
             &probcut_picker,
             position,
@@ -990,7 +1108,7 @@ skip_null_cutoff:
                 &child_variation, context, 0
             );
 
-            if (score > alpha && score < beta && reduced) {
+            if (score > alpha && reduced) {
                 context->late_move_researches++;
                 score = -negamax(
                     position, depth - 1, -alpha - 1, -alpha, ply + 1, 1,

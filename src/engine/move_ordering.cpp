@@ -238,6 +238,8 @@ static int move_order_score(
     attacker = position_piece_at(position, move.from);
     victim = captured_piece_for_move(position, move);
     {
+        int attacker_value = piece_value(attacker);
+        int victim_value = piece_value(victim);
         int promotion_score = (move.flags & MOVE_FLAG_PROMOTION) != 0
             ? (piece_value(move.promotion) - PAWN_VALUE) * 8
             : 0;
@@ -248,10 +250,19 @@ static int move_order_score(
             move.to,
             piece_type(victim)
         );
-        int value_score = piece_value(victim) * 16 - piece_value(attacker);
+        int value_score = victim_value * 16 - attacker_value;
+        int see_score = 0;
+
+        if (victim_value < attacker_value ||
+            (move.flags & MOVE_FLAG_PROMOTION) != 0) {
+            see_score = static_exchange_evaluation(position, move);
+            if (see_score < 0) {
+                return LOSING_CAPTURE_SCORE + history_score + see_score;
+            }
+        }
 
         return GOOD_CAPTURE_SCORE + promotion_score + value_score +
-            history_score;
+            history_score + see_score;
     }
 }
 
