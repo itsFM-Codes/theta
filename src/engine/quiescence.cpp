@@ -199,8 +199,7 @@ static int quiescence_search_internal(
             return 0;
         }
 
-        if (!in_check && !tactical_move &&
-            quiescence_depth < QUIESCENCE_CHECK_DEPTH) {
+        if (!in_check && quiescence_depth < QUIESCENCE_CHECK_DEPTH) {
             gives_check = move_gives_check(position, move);
         }
 

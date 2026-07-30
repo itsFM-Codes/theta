@@ -28,11 +28,11 @@ are a good sign, but they are not proof of playing strength by themselves.
 
 | Position | Depth | Score | Best move | Nodes |
 | --- | ---: | ---: | --- | ---: |
-| 1 | 5 | 39 | g1f3 | 3,704 |
-| 2 | 5 | -341 | e2a6 | 6,633 |
+| 1 | 5 | 39 | g1f3 | 3,748 |
+| 2 | 5 | -341 | e2a6 | 6,974 |
 | 3 | 5 | 17 | b5b6 | 689 |
 | 4 | 5 | 0 | e1f2 | 6,823 |
-| **Total** | | | | **17,849** |
+| **Total** | | | | **18,234** |
 
-Elo (based on cutechess with stockfish-18): ~2380
+Elo (based on cutechess with stockfish-18): ~2420
 Nodes per second: ~174-183k on the current Windows native build

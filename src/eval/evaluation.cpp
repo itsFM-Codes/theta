@@ -74,6 +74,11 @@ int evaluate_position_with_trace(
     }
 
     endgame_weight = (params->max_phase - phase) * 256 / params->max_phase;
+    if (endgame_weight < 0) {
+        endgame_weight = 0;
+    } else if (endgame_weight > 256) {
+        endgame_weight = 256;
+    }
 
     pieces = position->occupied;
     while (pieces != 0) {

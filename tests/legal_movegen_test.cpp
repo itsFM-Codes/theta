@@ -99,6 +99,34 @@ static void test_pinned_en_passant_is_illegal(void) {
     assert(perft(&position, 2) == 77);
 }
 
+static void test_tactical_middlegame_position(void) {
+    Position position;
+
+    assert(position_from_fen(
+        &position,
+        "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/"
+        "P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10"
+    ));
+    assert(perft(&position, 1) == 46);
+    assert(perft(&position, 2) == 2079);
+    assert(perft(&position, 3) == 89890);
+    assert(perft(&position, 4) == 3894594);
+}
+
+static void test_castling_and_promotion_stress_position(void) {
+    Position position;
+
+    assert(position_from_fen(
+        &position,
+        "r7/4p3/5p1q/3P4/4pQ2/4pP2/6pp/R3K1kr "
+        "w Q - 1 3"
+    ));
+    assert(perft(&position, 1) == 29);
+    assert(perft(&position, 2) == 681);
+    assert(perft(&position, 3) == 18511);
+    assert(perft(&position, 4) == 430036);
+}
+
 int main(void) {
     test_starting_position();
     test_kiwipete_position();
@@ -106,5 +134,7 @@ int main(void) {
     test_en_passant_and_rook_endgame_position();
     test_discovered_check_and_castling_position();
     test_pinned_en_passant_is_illegal();
+    test_tactical_middlegame_position();
+    test_castling_and_promotion_stress_position();
     return 0;
 }
