@@ -762,7 +762,7 @@ static int negamax(
     }
 
     if (excluded_move == 0 && allow_null_move && depth >= 3 && !in_check &&
-        beta < SEARCH_INFINITY &&
+        beta < SEARCH_INFINITY && static_score >= beta &&
         has_null_move_material(position, position->side_to_move)) {
         Position null_position = *position;
         PrincipalVariation null_variation;

@@ -88,11 +88,23 @@ static void test_discovered_check_and_castling_position(void) {
     assert(perft(&position, 4) == 2103487);
 }
 
+static void test_pinned_en_passant_is_illegal(void) {
+    Position position;
+
+    assert(position_from_fen(
+        &position,
+        "k3r3/8/8/3pP3/8/8/8/4K3 w - d6 0 1"
+    ));
+    assert(perft(&position, 1) == 6);
+    assert(perft(&position, 2) == 77);
+}
+
 int main(void) {
     test_starting_position();
     test_kiwipete_position();
     test_promotion_and_castling_position();
     test_en_passant_and_rook_endgame_position();
     test_discovered_check_and_castling_position();
+    test_pinned_en_passant_is_illegal();
     return 0;
 }
