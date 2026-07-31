@@ -79,6 +79,7 @@ static int quiescence_search_internal(
     int table_depth = -quiescence_depth;
     int table_score;
     int stand_pat = 0;
+    int best_score = -SEARCH_INFINITY;
     int in_check;
     int legal_move_count = 0;
     int original_alpha = alpha;
@@ -164,17 +165,18 @@ static int quiescence_search_internal(
             context->raw_evaluations++;
         }
         stand_pat = evaluate_position(position);
+        best_score = stand_pat;
 
         if (stand_pat >= beta) {
             if (context != 0) {
                 store_transposition_table(
                     &context->shared_state->transposition_table,
-                    key, table_depth, search_score_to_table(beta, ply),
+                    key, table_depth, search_score_to_table(stand_pat, ply),
                     TRANSPOSITION_LOWER_BOUND, table_move,
                     &context->transposition_statistics
                 );
             }
-            return beta;
+            return stand_pat;
         }
 
         if (stand_pat > alpha) {
@@ -249,6 +251,12 @@ static int quiescence_search_internal(
         legal_move_count++;
 
         search_push_position(context, position);
+        if (context != 0 && ply >= 0 && ply < MAX_SEARCH_PLY) {
+            context->line_moves[ply] = move;
+            context->line_move_types[ply] = piece_type(
+                position_piece_at(position, move.to)
+            );
+        }
 
         score = -quiescence_search_internal(
             position,
@@ -265,16 +273,20 @@ static int quiescence_search_internal(
             return 0;
         }
 
+        if (score > best_score) {
+            best_score = score;
+        }
+
         if (score >= beta) {
             if (context != 0) {
                 store_transposition_table(
                     &context->shared_state->transposition_table,
-                    key, table_depth, search_score_to_table(beta, ply),
+                    key, table_depth, search_score_to_table(score, ply),
                     TRANSPOSITION_LOWER_BOUND, move,
                     &context->transposition_statistics
                 );
             }
-            return beta;
+            return score;
         }
 
         if (score > alpha) {
@@ -300,15 +312,15 @@ static int quiescence_search_internal(
     if (context != 0) {
         store_transposition_table(
             &context->shared_state->transposition_table,
-            key, table_depth, search_score_to_table(alpha, ply),
-            alpha <= original_alpha
+            key, table_depth, search_score_to_table(best_score, ply),
+            best_score <= original_alpha
                 ? TRANSPOSITION_UPPER_BOUND
                 : TRANSPOSITION_EXACT,
             table_move,
             &context->transposition_statistics
         );
     }
-    return alpha;
+    return best_score;
 }
 
 int quiescence_search(

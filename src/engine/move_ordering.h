@@ -19,6 +19,13 @@ void initialize_move_picker(
     const Move *table_move
 );
 int move_picker_next(MovePicker *picker, Move *move);
+int quiet_history_score(
+    const SearchContext *context,
+    const Position *position,
+    Color color,
+    int ply,
+    Move move
+);
 
 void order_moves(
     Position *position,
@@ -39,7 +46,9 @@ void record_quiet_cutoff(
 );
 void record_quiet_failures(
     SearchContext *context,
+    const Position *position,
     Color color,
+    int ply,
     int depth,
     const MoveList *moves,
     int count

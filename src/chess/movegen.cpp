@@ -494,6 +494,87 @@ int find_king(const Position *position, Color color) {
     }
 }
 
+uint64_t position_pawn_attack_map(const Position *position, Color color) {
+    const uint64_t file_a = UINT64_C(0x0101010101010101);
+    const uint64_t file_h = UINT64_C(0x8080808080808080);
+    Piece pawn;
+    uint64_t pawns;
+
+    if (position == 0 || color == COLOR_NONE) {
+        return 0;
+    }
+
+    pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
+    pawns = position->piece_occupied[pawn];
+    if (color == COLOR_WHITE) {
+        return ((pawns & ~file_a) >> 9) | ((pawns & ~file_h) >> 7);
+    }
+    return ((pawns & ~file_a) << 7) | ((pawns & ~file_h) << 9);
+}
+
+uint64_t position_attack_map(const Position *position, Color color) {
+    static const int BISHOP_DIRECTIONS[4][2] = {
+        {-1, -1}, {-1, 1}, {1, -1}, {1, 1}
+    };
+    static const int ROOK_DIRECTIONS[4][2] = {
+        {-1, 0}, {1, 0}, {0, -1}, {0, 1}
+    };
+    uint64_t attacks;
+    uint64_t pieces;
+
+    if (position == 0 || color == COLOR_NONE) {
+        return 0;
+    }
+
+    initialize_attack_masks();
+    attacks = position_pawn_attack_map(position, color);
+    pieces = position->color_occupied[color];
+    while (pieces != 0) {
+        int square = pop_first_square(&pieces);
+        PieceType type = piece_type(position_piece_at(position, square));
+
+        if (type == PIECE_TYPE_KNIGHT) {
+            attacks |= knight_attack_masks[square];
+        } else if (type == PIECE_TYPE_KING) {
+            attacks |= king_attack_masks[square];
+        } else if (type == PIECE_TYPE_BISHOP ||
+                   type == PIECE_TYPE_ROOK ||
+                   type == PIECE_TYPE_QUEEN) {
+            int first_group = type == PIECE_TYPE_ROOK ? 1 : 0;
+            int last_group = type == PIECE_TYPE_BISHOP ? 0 : 1;
+            int group;
+
+            for (group = first_group; group <= last_group; ++group) {
+                const int (*directions)[2] = group == 0
+                    ? BISHOP_DIRECTIONS
+                    : ROOK_DIRECTIONS;
+                int direction;
+
+                for (direction = 0; direction < 4; ++direction) {
+                    int row = square_row(square) +
+                        directions[direction][0];
+                    int column = square_column(square) +
+                        directions[direction][1];
+
+                    while (is_valid_coordinate(row, column)) {
+                        int target = make_square(row, column);
+
+                        attacks |= UINT64_C(1) << target;
+                        if (position_piece_at(position, target) !=
+                            PIECE_NONE) {
+                            break;
+                        }
+                        row += directions[direction][0];
+                        column += directions[direction][1];
+                    }
+                }
+            }
+        }
+    }
+
+    return attacks;
+}
+
 static int is_attacked_by_slider(
     const Position *position,
     int square,

@@ -47,6 +47,12 @@ static void update_continuation_history_score(short *score, int bonus) {
     *score = (short)updated;
 }
 
+static int history_bonus(int depth) {
+    int bonus = 150 * depth - 100;
+
+    return bonus > 1500 ? 1500 : bonus;
+}
+
 static int moves_are_equal(Move first, Move second) {
     return first.from == second.from &&
            first.to == second.to &&
@@ -108,34 +114,49 @@ static int killer_move_score(
     return 0;
 }
 
-static int history_move_score(
+int quiet_history_score(
     const SearchContext *context,
     const Position *position,
     Color color,
     int ply,
     Move move
 ) {
+    static const int offsets[3] = {1, 2, 4};
     int score;
+    int index;
 
-    if (context == 0 || position == 0 || color == COLOR_NONE) {
+    if (context == 0 || context->shared_state == 0 ||
+        context->shared_state->heuristics == 0 ||
+        position == 0 || color == COLOR_NONE) {
         return 0;
     }
 
-    score = context->history[color][move.from][move.to];
-    if (ply > 0 && ply <= MAX_SEARCH_PLY) {
-        Move previous = context->line_moves[ply - 1];
-        if (is_valid_square(previous.from) && is_valid_square(previous.to)) {
-            PieceType previous_type = piece_type(
-                position_piece_at(position, previous.to)
-            );
-            PieceType moving_type = piece_type(
-                position_piece_at(position, move.from)
-            );
+    score = context->shared_state->heuristics
+        ->history[color][move.from][move.to];
+    for (index = 0; index < 3; ++index) {
+        int previous_ply = ply - offsets[index];
 
-            if (previous_type != PIECE_TYPE_NONE &&
+        if (previous_ply >= 0 && previous_ply < MAX_SEARCH_PLY) {
+            Move previous = context->line_moves[previous_ply];
+            PieceType previous_type =
+                context->line_move_types[previous_ply];
+            Piece moving_piece = position_piece_at(position, move.from);
+            PieceType moving_type;
+
+            if (moving_piece == PIECE_NONE) {
+                moving_piece = position_piece_at(position, move.to);
+            }
+            moving_type = piece_type(moving_piece);
+
+            if (is_valid_square(previous.from) &&
+                is_valid_square(previous.to) &&
+                previous_type != PIECE_TYPE_NONE &&
                 moving_type != PIECE_TYPE_NONE) {
-                score += context->continuation_history[previous_type][moving_type]
-                    [move.to];
+                int continuation = context->shared_state->heuristics
+                    ->continuation_history[previous_type][previous.to]
+                        [moving_type][move.to];
+
+                score += index == 0 ? continuation : continuation / 2;
             }
         }
     }
@@ -181,15 +202,16 @@ static int capture_history_score(
     int target_square,
     PieceType captured_type
 ) {
-    if (context == 0 || color == COLOR_NONE ||
+    if (context == 0 || context->shared_state == 0 ||
+        context->shared_state->heuristics == 0 || color == COLOR_NONE ||
         attacker_type == PIECE_TYPE_NONE ||
         captured_type == PIECE_TYPE_NONE ||
         !is_valid_square(target_square)) {
         return 0;
     }
 
-    return context->capture_history[color][attacker_type][target_square]
-        [captured_type];
+    return context->shared_state->heuristics
+        ->capture_history[color][attacker_type][target_square][captured_type];
 }
 
 static int move_order_score(
@@ -230,7 +252,7 @@ static int move_order_score(
             return reply_score;
         }
 
-        return history_move_score(
+        return quiet_history_score(
             context, position, position->side_to_move, ply, move
         );
     }
@@ -360,10 +382,14 @@ void record_quiet_cutoff(
     int depth,
     Move move
 ) {
+    static const int offsets[3] = {1, 2, 4};
     int bonus;
     int *history_score;
+    int index;
 
-    if (context == 0 || position == 0 || ply < 0 || ply >= MAX_KILLER_PLY ||
+    if (context == 0 || context->shared_state == 0 ||
+        context->shared_state->heuristics == 0 ||
+        position == 0 || ply < 0 || ply >= MAX_KILLER_PLY ||
         (move.flags & MOVE_FLAG_CAPTURE) != 0) {
         return;
     }
@@ -386,27 +412,31 @@ void record_quiet_cutoff(
         return;
     }
 
-    bonus = depth * depth;
-    history_score = &context->history[color][move.from][move.to];
+    bonus = history_bonus(depth);
+    history_score = &context->shared_state->heuristics
+        ->history[color][move.from][move.to];
     update_history_score(history_score, bonus);
 
-    if (ply > 0 && ply <= MAX_SEARCH_PLY) {
-        Move previous_move = context->line_moves[ply - 1];
-        if (is_valid_square(previous_move.from) &&
-            is_valid_square(previous_move.to)) {
-            PieceType previous_type = piece_type(
-                position_piece_at(position, previous_move.to)
-            );
+    for (index = 0; index < 3; ++index) {
+        int previous_ply = ply - offsets[index];
+
+        if (previous_ply >= 0 && previous_ply < MAX_SEARCH_PLY) {
+            Move previous_move = context->line_moves[previous_ply];
+            PieceType previous_type =
+                context->line_move_types[previous_ply];
             PieceType moving_type = piece_type(
                 position_piece_at(position, move.from)
             );
 
-            if (previous_type != PIECE_TYPE_NONE &&
+            if (is_valid_square(previous_move.from) &&
+                is_valid_square(previous_move.to) &&
+                previous_type != PIECE_TYPE_NONE &&
                 moving_type != PIECE_TYPE_NONE) {
                 update_continuation_history_score(
-                    &context->continuation_history[previous_type][moving_type]
-                        [move.to],
-                    bonus
+                    &context->shared_state->heuristics
+                        ->continuation_history[previous_type][previous_move.to]
+                            [moving_type][move.to],
+                    index == 0 ? bonus : bonus / 2
                 );
             }
         }
@@ -415,27 +445,67 @@ void record_quiet_cutoff(
 
 void record_quiet_failures(
     SearchContext *context,
+    const Position *position,
     Color color,
+    int ply,
     int depth,
     const MoveList *moves,
     int count
 ) {
+    static const int offsets[3] = {1, 2, 4};
     int index;
     int penalty;
 
-    if (context == 0 || color == COLOR_NONE || moves == 0 || depth <= 0) {
+    if (context == 0 || context->shared_state == 0 ||
+        context->shared_state->heuristics == 0 ||
+        position == 0 || color == COLOR_NONE ||
+        moves == 0 || depth <= 0) {
         return;
     }
 
-    penalty = -(depth * depth);
+    penalty = -history_bonus(depth);
     for (index = 0; index < count && index < moves->count; ++index) {
         Move move = moves->moves[index];
 
         if ((move.flags & MOVE_FLAG_CAPTURE) == 0) {
+            PieceType moving_type = piece_type(
+                position_piece_at(position, move.from)
+            );
+            int continuation_index;
+
             update_history_score(
-                &context->history[color][move.from][move.to],
+                &context->shared_state->heuristics
+                    ->history[color][move.from][move.to],
                 penalty
             );
+            for (continuation_index = 0;
+                 continuation_index < 3;
+                 ++continuation_index) {
+                int previous_ply =
+                    ply - offsets[continuation_index];
+
+                if (previous_ply >= 0 &&
+                    previous_ply < MAX_SEARCH_PLY) {
+                    Move previous_move =
+                        context->line_moves[previous_ply];
+                    PieceType previous_type =
+                        context->line_move_types[previous_ply];
+
+                    if (is_valid_square(previous_move.from) &&
+                        is_valid_square(previous_move.to) &&
+                        previous_type != PIECE_TYPE_NONE &&
+                        moving_type != PIECE_TYPE_NONE) {
+                        update_continuation_history_score(
+                            &context->shared_state->heuristics
+                                ->continuation_history[previous_type]
+                                    [previous_move.to][moving_type][move.to],
+                            continuation_index == 0
+                                ? penalty
+                                : penalty / 2
+                        );
+                    }
+                }
+            }
         }
     }
 }
@@ -451,7 +521,9 @@ void record_capture_cutoff(
     Piece victim;
     int *history_score;
 
-    if (context == 0 || position == 0 || color == COLOR_NONE ||
+    if (context == 0 || context->shared_state == 0 ||
+        context->shared_state->heuristics == 0 ||
+        position == 0 || color == COLOR_NONE ||
         depth <= 0 || (move.flags & MOVE_FLAG_CAPTURE) == 0) {
         return;
     }
@@ -463,9 +535,10 @@ void record_capture_cutoff(
         return;
     }
 
-    history_score = &context->capture_history[color][piece_type(attacker)]
-        [move.to][piece_type(victim)];
-    update_history_score(history_score, depth * depth);
+    history_score = &context->shared_state->heuristics
+        ->capture_history[color][piece_type(attacker)]
+            [move.to][piece_type(victim)];
+    update_history_score(history_score, history_bonus(depth));
 }
 
 void record_capture_failures(
@@ -479,12 +552,14 @@ void record_capture_failures(
     int index;
     int penalty;
 
-    if (context == 0 || position == 0 || color == COLOR_NONE ||
+    if (context == 0 || context->shared_state == 0 ||
+        context->shared_state->heuristics == 0 ||
+        position == 0 || color == COLOR_NONE ||
         moves == 0 || depth <= 0) {
         return;
     }
 
-    penalty = -(depth * depth);
+    penalty = -history_bonus(depth);
     for (index = 0; index < count && index < moves->count; ++index) {
         Move move = moves->moves[index];
         Piece attacker;
@@ -502,8 +577,9 @@ void record_capture_failures(
         }
 
         update_history_score(
-            &context->capture_history[color][piece_type(attacker)]
-                [move.to][piece_type(victim)],
+            &context->shared_state->heuristics
+                ->capture_history[color][piece_type(attacker)]
+                    [move.to][piece_type(victim)],
             penalty
         );
     }
