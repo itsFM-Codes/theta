@@ -14,45 +14,11 @@ static int file_has_pawn(const Position *position, int column, Color color) {
     return (position->piece_occupied[pawn] & (FILE_A_MASK << column)) != 0;
 }
 
-static int bishop_mobility_direction(
-    const Position *position,
-    int row,
-    int column,
-    int row_step,
-    int column_step,
-    Color color
-) {
-    int count = 0;
-
-    row += row_step;
-    column += column_step;
-    while (is_valid_coordinate(row, column)) {
-        Piece piece = position_piece_at_coordinates(position, row, column);
-
-        if (piece_color(piece) == color) {
-            break;
-        }
-
-        count++;
-        if (piece != PIECE_NONE) {
-            break;
-        }
-
-        row += row_step;
-        column += column_step;
-    }
-
-    return count;
-}
-
 static int bishop_mobility(const Position *position, int square, Color color) {
-    int row = square_row(square);
-    int column = square_column(square);
-
-    return bishop_mobility_direction(position, row, column, -1, -1, color) +
-           bishop_mobility_direction(position, row, column, -1, 1, color) +
-           bishop_mobility_direction(position, row, column, 1, -1, color) +
-           bishop_mobility_direction(position, row, column, 1, 1, color);
+    return __builtin_popcountll(
+        position_piece_attack_map(position, square, PIECE_TYPE_BISHOP) &
+        ~position->color_occupied[color]
+    );
 }
 
 static int knight_mobility(const Position *position, int square, Color color) {

@@ -26,6 +26,13 @@ int quiet_history_score(
     int ply,
     Move move
 );
+int capture_history_score(
+    const SearchContext *context,
+    Color color,
+    PieceType attacker_type,
+    int target_square,
+    PieceType captured_type
+);
 
 void order_moves(
     Position *position,

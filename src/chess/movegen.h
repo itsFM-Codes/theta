@@ -10,6 +10,11 @@ int make_legal_move(Position *position, Move move, UndoState *undo);
 
 int find_king(const Position *position, Color color);
 uint64_t position_pawn_attack_map(const Position *position, Color color);
+uint64_t position_piece_attack_map(
+    const Position *position,
+    int square,
+    PieceType type
+);
 uint64_t position_attack_map(const Position *position, Color color);
 int is_square_attacked(
     const Position *position,

@@ -3,6 +3,7 @@
 static uint64_t knight_attack_masks[SQUARE_COUNT];
 static uint64_t king_attack_masks[SQUARE_COUNT];
 static uint64_t pawn_attackers[COLOR_NONE][SQUARE_COUNT];
+static uint64_t slider_rays[SQUARE_COUNT][8];
 static int attack_masks_initialized;
 
 static int pop_first_square(uint64_t *squares) {
@@ -43,6 +44,25 @@ static void initialize_attack_masks(void) {
         int index;
         int row_offset;
         int column_offset;
+
+        static const int SLIDER_DIRECTIONS[8][2] = {
+            {-1, -1}, {-1, 1}, {1, -1}, {1, 1},
+            {-1, 0}, {1, 0}, {0, -1}, {0, 1}
+        };
+
+        for (index = 0; index < 8; ++index) {
+            int ray_row = row + SLIDER_DIRECTIONS[index][0];
+            int ray_column = column + SLIDER_DIRECTIONS[index][1];
+
+            while (is_valid_coordinate(ray_row, ray_column)) {
+                slider_rays[square][index] |= UINT64_C(1) << make_square(
+                    ray_row,
+                    ray_column
+                );
+                ray_row += SLIDER_DIRECTIONS[index][0];
+                ray_column += SLIDER_DIRECTIONS[index][1];
+            }
+        }
 
         for (index = 0; index < 8; ++index) {
             add_attack(
@@ -243,49 +263,83 @@ static void generate_sliding_moves(
     const Position *position,
     MoveList *moves,
     int from,
-    const int directions[][2],
-    int direction_count,
+    PieceType type,
     int tactical_only
 ) {
-    int start_row = square_row(from);
-    int start_column = square_column(from);
-    int direction_index;
+    uint64_t targets = position_piece_attack_map(position, from, type);
     const Piece *board = position->board;
 
-    for (direction_index = 0;
-         direction_index < direction_count;
-         ++direction_index) {
-        int row = start_row + directions[direction_index][0];
-        int column = start_column + directions[direction_index][1];
+    targets &= tactical_only
+        ? position->color_occupied[opposite_color(position->side_to_move)]
+        : ~position->color_occupied[position->side_to_move];
+    while (targets != 0) {
+        int to = pop_first_square(&targets);
+        Piece target = board[to];
 
-        while (is_valid_coordinate(row, column)) {
-            int to = make_square(row, column);
-            Piece target = board[to];
+        add_move(
+            moves,
+            from,
+            to,
+            PIECE_NONE,
+            target == PIECE_NONE ? MOVE_FLAG_NONE : MOVE_FLAG_CAPTURE
+        );
+    }
+}
 
-            if (target == PIECE_NONE) {
-                if (tactical_only) {
-                    row += directions[direction_index][0];
-                    column += directions[direction_index][1];
-                    continue;
-                }
-                add_move(moves, from, to, PIECE_NONE, MOVE_FLAG_NONE);
-            } else {
-                if (piece_color(target) != position->side_to_move) {
-                    add_move(
-                        moves,
-                        from,
-                        to,
-                        PIECE_NONE,
-                        MOVE_FLAG_CAPTURE
-                    );
-                }
-                break;
-            }
+uint64_t position_piece_attack_map(
+    const Position *position,
+    int square,
+    PieceType type
+) {
+    static const int SLIDER_DIRECTIONS[8][2] = {
+        {-1, -1}, {-1, 1}, {1, -1}, {1, 1},
+        {-1, 0}, {1, 0}, {0, -1}, {0, 1}
+    };
+    int first_direction;
+    int last_direction;
+    uint64_t attacks = 0;
+    int direction;
 
-            row += directions[direction_index][0];
-            column += directions[direction_index][1];
+    if (position == 0 || !is_valid_square(square)) {
+        return 0;
+    }
+
+    initialize_attack_masks();
+    if (type == PIECE_TYPE_BISHOP) {
+        first_direction = 0;
+        last_direction = 3;
+    } else if (type == PIECE_TYPE_ROOK) {
+        first_direction = 4;
+        last_direction = 7;
+    } else if (type == PIECE_TYPE_QUEEN) {
+        first_direction = 0;
+        last_direction = 7;
+    } else {
+        return type == PIECE_TYPE_KNIGHT
+            ? knight_attack_masks[square]
+            : (type == PIECE_TYPE_KING ? king_attack_masks[square] : 0);
+    }
+
+    for (direction = first_direction;
+         direction <= last_direction;
+         ++direction) {
+        uint64_t ray = slider_rays[square][direction];
+        uint64_t blockers = ray & position->occupied;
+
+        if (blockers == 0) {
+            attacks |= ray;
+        } else {
+            int blocker = (SLIDER_DIRECTIONS[direction][0] > 0 ||
+                           (SLIDER_DIRECTIONS[direction][0] == 0 &&
+                            SLIDER_DIRECTIONS[direction][1] > 0))
+                ? __builtin_ctzll(blockers)
+                : 63 - __builtin_clzll(blockers);
+
+            attacks |= ray & ~slider_rays[blocker][direction];
         }
     }
+
+    return attacks;
 }
 
 static void generate_castling_moves(const Position *position, MoveList *moves, int from) {
@@ -378,28 +432,6 @@ static void generate_moves_internal(
     MoveList *moves,
     int tactical_only
 ) {
-    static const int BISHOP_DIRECTIONS[4][2] = {
-        {-1, -1},
-        {-1, 1},
-        {1, -1},
-        {1, 1}
-    };
-    static const int ROOK_DIRECTIONS[4][2] = {
-        {-1, 0},
-        {1, 0},
-        {0, -1},
-        {0, 1}
-    };
-    static const int QUEEN_DIRECTIONS[8][2] = {
-        {-1, -1},
-        {-1, 1},
-        {1, -1},
-        {1, 1},
-        {-1, 0},
-        {1, 0},
-        {0, -1},
-        {0, 1}
-    };
     uint64_t pieces;
     const Piece *board = position->board;
 
@@ -438,8 +470,7 @@ static void generate_moves_internal(
                     position,
                     moves,
                     square,
-                    BISHOP_DIRECTIONS,
-                    4,
+                    PIECE_TYPE_BISHOP,
                     tactical_only
                 );
                 break;
@@ -448,8 +479,7 @@ static void generate_moves_internal(
                     position,
                     moves,
                     square,
-                    ROOK_DIRECTIONS,
-                    4,
+                    PIECE_TYPE_ROOK,
                     tactical_only
                 );
                 break;
@@ -458,8 +488,7 @@ static void generate_moves_internal(
                     position,
                     moves,
                     square,
-                    QUEEN_DIRECTIONS,
-                    8,
+                    PIECE_TYPE_QUEEN,
                     tactical_only
                 );
                 break;
@@ -513,12 +542,6 @@ uint64_t position_pawn_attack_map(const Position *position, Color color) {
 }
 
 uint64_t position_attack_map(const Position *position, Color color) {
-    static const int BISHOP_DIRECTIONS[4][2] = {
-        {-1, -1}, {-1, 1}, {1, -1}, {1, 1}
-    };
-    static const int ROOK_DIRECTIONS[4][2] = {
-        {-1, 0}, {1, 0}, {0, -1}, {0, 1}
-    };
     uint64_t attacks;
     uint64_t pieces;
 
@@ -540,35 +563,7 @@ uint64_t position_attack_map(const Position *position, Color color) {
         } else if (type == PIECE_TYPE_BISHOP ||
                    type == PIECE_TYPE_ROOK ||
                    type == PIECE_TYPE_QUEEN) {
-            int first_group = type == PIECE_TYPE_ROOK ? 1 : 0;
-            int last_group = type == PIECE_TYPE_BISHOP ? 0 : 1;
-            int group;
-
-            for (group = first_group; group <= last_group; ++group) {
-                const int (*directions)[2] = group == 0
-                    ? BISHOP_DIRECTIONS
-                    : ROOK_DIRECTIONS;
-                int direction;
-
-                for (direction = 0; direction < 4; ++direction) {
-                    int row = square_row(square) +
-                        directions[direction][0];
-                    int column = square_column(square) +
-                        directions[direction][1];
-
-                    while (is_valid_coordinate(row, column)) {
-                        int target = make_square(row, column);
-
-                        attacks |= UINT64_C(1) << target;
-                        if (position_piece_at(position, target) !=
-                            PIECE_NONE) {
-                            break;
-                        }
-                        row += directions[direction][0];
-                        column += directions[direction][1];
-                    }
-                }
-            }
+            attacks |= position_piece_attack_map(position, square, type);
         }
     }
 
@@ -584,39 +579,24 @@ static int is_attacked_by_slider(
     PieceType first_type,
     PieceType second_type
 ) {
-    int start_row = square_row(square);
-    int start_column = square_column(square);
-    int direction_index;
+    Piece slider = attacking_color == COLOR_WHITE
+        ? (first_type == PIECE_TYPE_BISHOP
+            ? PIECE_WHITE_BISHOP : PIECE_WHITE_ROOK)
+        : (first_type == PIECE_TYPE_BISHOP
+            ? PIECE_BLACK_BISHOP : PIECE_BLACK_ROOK);
+    Piece queen = attacking_color == COLOR_WHITE
+        ? PIECE_WHITE_QUEEN
+        : PIECE_BLACK_QUEEN;
+    PieceType slider_type = first_type == PIECE_TYPE_BISHOP
+        ? PIECE_TYPE_BISHOP
+        : PIECE_TYPE_ROOK;
 
-    for (direction_index = 0;
-         direction_index < direction_count;
-         ++direction_index) {
-        int row = start_row + directions[direction_index][0];
-        int column = start_column + directions[direction_index][1];
-
-        while (is_valid_coordinate(row, column)) {
-            Piece piece = position_piece_at_coordinates(
-                position,
-                row,
-                column
-            );
-
-            if (piece != PIECE_NONE) {
-                if (piece_color(piece) == attacking_color &&
-                    (piece_type(piece) == first_type ||
-                     piece_type(piece) == second_type)) {
-                    return 1;
-                }
-
-                break;
-            }
-
-            row += directions[direction_index][0];
-            column += directions[direction_index][1];
-        }
-    }
-
-    return 0;
+    (void)directions;
+    (void)direction_count;
+    (void)second_type;
+    return (position_piece_attack_map(position, square, slider_type) &
+            (position->piece_occupied[slider] |
+             position->piece_occupied[queen])) != 0;
 }
 
 int is_square_attacked(

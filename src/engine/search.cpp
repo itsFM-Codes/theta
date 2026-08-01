@@ -15,6 +15,8 @@
 #define SEARCH_HISTORY_LIMIT 3000
 #define MAX_CHECK_EXTENSION_PLY 16
 #define MAX_LMR_DEPTH 64
+#define SMALL_PROBCUT_MARGIN 280
+#define HISTORY_PRUNE_BASE 1400
 
 static int lmr_reductions[MAX_LMR_DEPTH][MAX_MOVES];
 static int lmr_reductions_initialized = 0;
@@ -571,6 +573,15 @@ static int null_move_reduction(int depth, int static_score, int beta) {
     return reduction;
 }
 
+static int null_move_static_margin(int depth, int improving) {
+    int margin = 96 - depth * 8;
+
+    if (improving) {
+        margin -= 24;
+    }
+    return margin > 0 ? margin : 0;
+}
+
 static int search_static_evaluation(
     Position *position,
     SearchContext *context,
@@ -721,6 +732,7 @@ static int negamax(
     int in_check;
     int static_score;
     int pruning_score;
+    int table_entry_score = 0;
     int improving;
     int original_alpha = alpha;
     int legal_move_count = 0;
@@ -836,6 +848,24 @@ static int negamax(
     }
     improving = position_is_improving(context, ply, static_score);
 
+    if (excluded_move == 0 && !is_pv_node && depth >= 5 &&
+        table_entry.is_valid &&
+        table_entry.flag == TRANSPOSITION_LOWER_BOUND &&
+        table_entry.depth >= depth - 4) {
+        table_entry_score = search_score_from_table(
+            table_entry.score,
+            ply
+        );
+        if (table_entry_score >= beta + SMALL_PROBCUT_MARGIN &&
+            table_entry_score < SEARCH_CHECKMATE -
+                MAX_PRINCIPAL_VARIATION) {
+            if (context != 0) {
+                context->probcut_cutoffs++;
+            }
+            return beta + SMALL_PROBCUT_MARGIN;
+        }
+    }
+
     if (excluded_move == 0 && depth <= 2 && !is_pv_node && !in_check &&
         alpha > -SEARCH_CHECKMATE + MAX_PRINCIPAL_VARIATION &&
         pruning_score + 300 + RAZORING_MARGIN * depth * depth < alpha) {
@@ -874,7 +904,8 @@ static int negamax(
 
     if (excluded_move == 0 && allow_null_move && !is_pv_node &&
         depth >= 3 && !in_check &&
-        beta < SEARCH_INFINITY && pruning_score >= beta &&
+        beta < SEARCH_INFINITY &&
+        pruning_score >= beta - null_move_static_margin(depth, improving) &&
         has_null_move_material(position, position->side_to_move)) {
         Position null_position = *position;
         PrincipalVariation null_variation;
@@ -1137,6 +1168,7 @@ skip_null_cutoff:
         int creates_threat = 0;
         int quiet_move;
         int see_score = 0;
+        int capture_history = 0;
         Color moving_color;
         PieceType moving_type;
         int move_index;
@@ -1176,6 +1208,15 @@ skip_null_cutoff:
 
         move_index = legal_move_count++;
         gives_check = position_is_in_check(position);
+        if (!quiet_move) {
+            capture_history = capture_history_score(
+                context,
+                moving_color,
+                moving_type,
+                move.to,
+                piece_type(undo.captured_piece)
+            );
+        }
         if (quiet_move && !gives_check) {
             creates_threat = quiet_move_attacks_valuable_piece(
                 position,
@@ -1184,11 +1225,28 @@ skip_null_cutoff:
             );
         }
 
+        if (depth >= 4 && !is_pv_node && !in_check &&
+            move_index >= 4 && quiet_move && !gives_check &&
+            !promotes_pawn && !creates_threat &&
+            quiet_history_score(
+                context,
+                position,
+                moving_color,
+                ply,
+                move
+            ) < -HISTORY_PRUNE_BASE - depth * 100) {
+            if (context != 0) {
+                context->late_move_prunes++;
+            }
+            undo_move(position, move, &undo);
+            continue;
+        }
+
         if (depth <= 4 && !is_pv_node && !in_check && move_index > 0 &&
             !quiet_move && (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
             !gives_check &&
             pruning_score + search_piece_value(undo.captured_piece) +
-                160 + 180 * depth <= alpha) {
+                160 + 180 * depth + capture_history / 16 <= alpha) {
             if (context != 0) {
                 context->static_futility_prunes++;
             }
@@ -1198,7 +1256,8 @@ skip_null_cutoff:
 
         if (depth <= 4 && !is_pv_node && !in_check && move_index > 0 &&
             !quiet_move && (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
-            !gives_check && see_score < -70 * depth) {
+            !gives_check &&
+            see_score < -70 * depth - capture_history / 32) {
             if (context != 0) {
                 context->see_prunes++;
             }

@@ -195,7 +195,7 @@ static Piece captured_piece_for_move(const Position *position, Move move) {
     return position_piece_at(position, move.to);
 }
 
-static int capture_history_score(
+int capture_history_score(
     const SearchContext *context,
     Color color,
     PieceType attacker_type,
