@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define PAWN_HASH_SIZE (1 << 14)
+#define PAWN_HASH_SIZE (1 << 15)
 #define FILE_A_MASK UINT64_C(0x0101010101010101)
 
 typedef struct PawnHashEntry {
@@ -29,40 +29,20 @@ static int pop_first_square(uint64_t *squares) {
 }
 
 static uint64_t pawn_structure_key(const Position *position) {
-    uint64_t key = UINT64_C(1469598103934665603);
-    uint64_t pieces = position->occupied;
+    uint64_t key = position->occupied * UINT64_C(0x9e3779b97f4a7c15);
 
-    while (pieces != 0) {
-        int square = pop_first_square(&pieces);
-        Piece piece = position_piece_at(position, square);
-        PieceType type = piece_type(piece);
-
-        if (type == PIECE_TYPE_PAWN || type == PIECE_TYPE_KING) {
-            key ^= (uint64_t)(piece + 1) * 67u + (uint64_t)square;
-            key *= UINT64_C(1099511628211);
-        } else if (type != PIECE_TYPE_NONE) {
-            // Only occupancy affects pawn blockage.
-            key ^= UINT64_C(4099) + (uint64_t)square;
-            key *= UINT64_C(1099511628211);
-        }
-    }
+    key ^= position->piece_occupied[PIECE_WHITE_PAWN] *
+        UINT64_C(0xbf58476d1ce4e5b9);
+    key ^= position->piece_occupied[PIECE_BLACK_PAWN] *
+        UINT64_C(0x94d049bb133111eb);
+    key ^= position->piece_occupied[PIECE_WHITE_KING] *
+        UINT64_C(0x632be59bd9b4e019);
+    key ^= position->piece_occupied[PIECE_BLACK_KING] *
+        UINT64_C(0xd6e8feb86659fd93);
+    key ^= key >> 29;
+    key *= UINT64_C(0x94d049bb133111eb);
+    key ^= key >> 31;
     return key;
-}
-
-static int count_pawns_on_file(
-    const Position *position,
-    Color color,
-    int column
-) {
-    Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
-
-    if (column < 0 || column >= BOARD_SIZE) {
-        return 0;
-    }
-
-    return __builtin_popcountll(
-        position->piece_occupied[pawn] & (FILE_A_MASK << column)
-    );
 }
 
 static int pawn_is_passed(const Position *position, int square, Color color) {
@@ -348,13 +328,13 @@ static int pawn_is_candidate_passed(
            pawn_has_adjacent_helper(position, square, color);
 }
 
-static int pawn_island_count(const Position *position, Color color) {
+static int pawn_island_count(const int *file_counts) {
     int islands = 0;
     int in_island = 0;
     int column;
 
     for (column = 0; column < BOARD_SIZE; ++column) {
-        if (count_pawns_on_file(position, color, column) > 0) {
+        if (file_counts[column] > 0) {
             if (!in_island) {
                 islands++;
                 in_island = 1;
@@ -376,15 +356,23 @@ static int side_pawn_structure_score(
     int column;
     int square;
     Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
-    int islands = pawn_island_count(position, color);
+    int file_counts[BOARD_SIZE];
+    int islands;
     uint64_t pawns;
+
+    for (column = 0; column < BOARD_SIZE; ++column) {
+        file_counts[column] = __builtin_popcountll(
+            position->piece_occupied[pawn] & (FILE_A_MASK << column)
+        );
+    }
+    islands = pawn_island_count(file_counts);
 
     if (islands > 1) {
         score -= (islands - 1) * params->pawn_island_penalty;
     }
 
     for (column = 0; column < BOARD_SIZE; ++column) {
-        int count = count_pawns_on_file(position, color, column);
+        int count = file_counts[column];
 
         if (count > 1) {
             score -= (count - 1) * params->doubled_pawn_penalty;
@@ -400,12 +388,11 @@ static int side_pawn_structure_score(
 
         column = square_column(square);
 
-        if (column > 0 && count_pawns_on_file(position, color, column - 1) > 0) {
+        if (column > 0 && file_counts[column - 1] > 0) {
             has_adjacent_pawn = 1;
         }
 
-        if (column < BOARD_SIZE - 1 &&
-            count_pawns_on_file(position, color, column + 1) > 0) {
+        if (column < BOARD_SIZE - 1 && file_counts[column + 1] > 0) {
             has_adjacent_pawn = 1;
         }
 

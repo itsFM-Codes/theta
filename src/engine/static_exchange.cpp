@@ -133,32 +133,46 @@ static Move exchange_capture_move(
 }
 
 static int exchange_after_capture(Position *position, int square, int depth) {
-    int best_score = 0;
     uint64_t attackers;
 
     if (depth >= MAX_EXCHANGE_DEPTH) {
         return 0;
     }
 
-    // Only captures onto this square matter, so find its attackers directly.
     attackers = position->side_to_move == COLOR_NONE
         ? 0
         : position->color_occupied[position->side_to_move];
     while (attackers != 0) {
-        int from = __builtin_ctzll(attackers);
+        uint64_t candidates = attackers;
+        int best_from = NO_SQUARE;
+        int best_value = 30001;
         Move move;
         UndoState undo;
         int score;
 
-        attackers &= attackers - 1;
-        if (!piece_attacks_square(position, from, square)) {
-            continue;
+        while (candidates != 0) {
+            int from = __builtin_ctzll(candidates);
+            Piece attacker = position_piece_at(position, from);
+            int value = piece_type(attacker) == PIECE_TYPE_KING
+                ? 30000
+                : piece_value(attacker);
+
+            candidates &= candidates - 1;
+            if (value < best_value &&
+                piece_attacks_square(position, from, square)) {
+                best_from = from;
+                best_value = value;
+            }
         }
 
-        move = exchange_capture_move(position, from, square);
-        score = captured_piece_value(position, move);
+        if (!is_valid_square(best_from)) {
+            return 0;
+        }
 
+        move = exchange_capture_move(position, best_from, square);
+        score = captured_piece_value(position, move);
         if (!make_legal_move(position, move, &undo)) {
+            attackers &= ~(UINT64_C(1) << best_from);
             continue;
         }
 
@@ -168,13 +182,10 @@ static int exchange_after_capture(Position *position, int square, int depth) {
 
         score -= exchange_after_capture(position, square, depth + 1);
         undo_move(position, move, &undo);
-
-        if (score > best_score) {
-            best_score = score;
-        }
+        return score > 0 ? score : 0;
     }
 
-    return best_score;
+    return 0;
 }
 
 int static_exchange_evaluation(Position *position, Move move) {

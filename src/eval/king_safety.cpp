@@ -15,6 +15,34 @@ static int file_has_pawn(const Position *position, int column, Color color) {
     return (position->piece_occupied[pawn] & (FILE_A_MASK << column)) != 0;
 }
 
+static int attack_material(
+    const Position *position,
+    Color color,
+    const EvalParams *params
+) {
+    Piece knight = color == COLOR_WHITE
+        ? PIECE_WHITE_KNIGHT
+        : PIECE_BLACK_KNIGHT;
+    Piece bishop = color == COLOR_WHITE
+        ? PIECE_WHITE_BISHOP
+        : PIECE_BLACK_BISHOP;
+    Piece rook = color == COLOR_WHITE
+        ? PIECE_WHITE_ROOK
+        : PIECE_BLACK_ROOK;
+    Piece queen = color == COLOR_WHITE
+        ? PIECE_WHITE_QUEEN
+        : PIECE_BLACK_QUEEN;
+
+    return __builtin_popcountll(position->piece_occupied[knight]) *
+               params->piece_values[PIECE_TYPE_KNIGHT] +
+           __builtin_popcountll(position->piece_occupied[bishop]) *
+               params->piece_values[PIECE_TYPE_BISHOP] +
+           __builtin_popcountll(position->piece_occupied[rook]) *
+               params->piece_values[PIECE_TYPE_ROOK] +
+           __builtin_popcountll(position->piece_occupied[queen]) *
+               params->piece_values[PIECE_TYPE_QUEEN];
+}
+
 static int find_king_square(const Position *position, Color color) {
     return color == COLOR_WHITE
         ? position->white_king_square
@@ -37,6 +65,7 @@ static int king_attack_units(
     const Position *position,
     int king_square,
     Color defending_color,
+    uint64_t attack_map,
     const EvalParams *params
 ) {
     Color attacking_color = opposite_color(defending_color);
@@ -55,7 +84,7 @@ static int king_attack_units(
                 continue;
             }
             ring_square = make_square(row, column);
-            if (is_square_attacked(position, ring_square, attacking_color)) {
+            if ((attack_map & (UINT64_C(1) << ring_square)) != 0) {
                 units += params->king_ring_attack_unit;
             }
         }
@@ -166,6 +195,7 @@ static int major_piece_file_pressure(
 static int side_king_safety_score(
     const Position *position,
     Color color,
+    uint64_t enemy_attacks,
     const EvalParams *params
 ) {
     int score = 0;
@@ -176,6 +206,7 @@ static int side_king_safety_score(
     int column;
     Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
     int danger;
+    int scale;
 
     if (!is_valid_square(king_square)) {
         return 0;
@@ -210,7 +241,13 @@ static int side_king_safety_score(
         }
     }
 
-    danger = king_attack_units(position, king_square, color, params) +
+    danger = king_attack_units(
+                 position,
+                 king_square,
+                 color,
+                 enemy_attacks,
+                 params
+             ) +
              pawn_storm_danger(position, king_square, color) +
              major_piece_file_pressure(position, king_square, color, params);
     danger += danger * danger / params->king_danger_quadratic_divisor;
@@ -219,10 +256,23 @@ static int side_king_safety_score(
     }
     score -= danger;
 
-    return score;
+    scale = attack_material(
+        position,
+        opposite_color(color),
+        params
+    ) + 400;
+    if (scale > 3200) {
+        scale = 3200;
+    }
+    return score * scale / 3200;
 }
 
-int king_safety_score(const Position *position, int endgame_weight) {
+int king_safety_score_with_attacks(
+    const Position *position,
+    int endgame_weight,
+    uint64_t white_attacks,
+    uint64_t black_attacks
+) {
     int score;
     const EvalParams *params = current_eval_params();
 
@@ -230,14 +280,32 @@ int king_safety_score(const Position *position, int endgame_weight) {
         return 0;
     }
 
-    if (endgame_weight < 0) {
-        endgame_weight = 0;
-    } else if (endgame_weight > 256) {
-        endgame_weight = 256;
+    (void)endgame_weight;
+
+    score = side_king_safety_score(
+        position,
+        COLOR_WHITE,
+        black_attacks,
+        params
+    ) - side_king_safety_score(
+        position,
+        COLOR_BLACK,
+        white_attacks,
+        params
+    );
+
+    return score;
+}
+
+int king_safety_score(const Position *position, int endgame_weight) {
+    if (position == 0) {
+        return 0;
     }
 
-    score = side_king_safety_score(position, COLOR_WHITE, params) -
-            side_king_safety_score(position, COLOR_BLACK, params);
-
-    return score * (256 - endgame_weight) / 256;
+    return king_safety_score_with_attacks(
+        position,
+        endgame_weight,
+        position_attack_map(position, COLOR_WHITE),
+        position_attack_map(position, COLOR_BLACK)
+    );
 }

@@ -1,6 +1,7 @@
 #include "eval_tuning.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -43,6 +44,18 @@ static int parse_result_token(const std::string &text, double *result) {
         *result = 0.0;
         return 1;
     }
+
+    {
+        char *end = 0;
+        double value = strtod(text.c_str(), &end);
+
+        if (end != text.c_str() && *end == '\0' &&
+            value >= 0.0 && value <= 1.0) {
+            *result = value;
+            return 1;
+        }
+    }
+
     return 0;
 }
 
