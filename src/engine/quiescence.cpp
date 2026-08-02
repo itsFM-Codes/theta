@@ -78,6 +78,7 @@ static int quiescence_search_internal(
     uint64_t key = 0;
     int table_depth = -quiescence_depth;
     int table_score;
+    int cached_static = 0;
     int stand_pat = 0;
     int best_score = -SEARCH_INFINITY;
     int in_check;
@@ -162,9 +163,23 @@ static int quiescence_search_internal(
 
     if (!in_check) {
         if (context != 0) {
-            context->raw_evaluations++;
+            cached_static = probe_transposition_static_evaluation(
+                &context->shared_state->transposition_table,
+                key,
+                &stand_pat
+            );
+            if (cached_static) {
+                context->static_evaluation_cache_hits++;
+            }
         }
-        stand_pat = evaluate_position(position);
+        if (!cached_static) {
+            if (context != 0) {
+                context->raw_evaluations++;
+            }
+            stand_pat = evaluate_position(position);
+        } else {
+            stand_pat += correction_history_score(context, position) / 2;
+        }
         best_score = stand_pat;
 
         if (stand_pat >= beta) {
@@ -230,10 +245,14 @@ static int quiescence_search_internal(
             !gives_check) {
             int see_score;
 
-            if (context != 0) {
-                context->see_calls++;
+            if (move_picker.see_valid[index]) {
+                see_score = move_picker.see_scores[index];
+            } else {
+                if (context != 0) {
+                    context->see_calls++;
+                }
+                see_score = static_exchange_evaluation(position, move);
             }
-            see_score = static_exchange_evaluation(position, move);
             if (see_score < 0) {
                 if (context != 0) {
                     context->see_prunes++;

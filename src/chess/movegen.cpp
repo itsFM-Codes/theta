@@ -541,7 +541,10 @@ uint64_t position_pawn_attack_map(const Position *position, Color color) {
     return ((pawns & ~file_a) << 7) | ((pawns & ~file_h) << 9);
 }
 
-uint64_t position_attack_map(const Position *position, Color color) {
+static uint64_t build_position_attack_map(
+    const Position *position,
+    Color color
+) {
     uint64_t attacks;
     uint64_t pieces;
 
@@ -568,6 +571,21 @@ uint64_t position_attack_map(const Position *position, Color color) {
     }
 
     return attacks;
+}
+
+uint64_t position_attack_map(const Position *position, Color color) {
+    if (position == 0 || color == COLOR_NONE) {
+        return 0;
+    }
+
+    if ((position->attack_map_cache_valid & (1 << color)) == 0) {
+        position->attack_map_cache[color] = build_position_attack_map(
+            position,
+            color
+        );
+        position->attack_map_cache_valid |= 1 << color;
+    }
+    return position->attack_map_cache[color];
 }
 
 static int is_attacked_by_slider(

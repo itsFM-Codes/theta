@@ -30,6 +30,11 @@ typedef struct Position {
     mutable Color zobrist_side_to_move;
     mutable int zobrist_castling_rights;
     mutable int zobrist_en_passant_square;
+    mutable uint64_t pawn_history_key;
+    mutable int pawn_history_key_valid;
+    mutable Color pawn_history_side_to_move;
+    mutable uint64_t attack_map_cache[COLOR_NONE];
+    mutable int attack_map_cache_valid;
 } Position;
 
 void clear_position(Position *position);
@@ -100,6 +105,8 @@ static inline int position_set_piece(
         position->black_king_square = square;
     }
     position->zobrist_key_valid = 0;
+    position->pawn_history_key_valid = 0;
+    position->attack_map_cache_valid = 0;
     return 1;
 }
 

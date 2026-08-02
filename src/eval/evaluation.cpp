@@ -8,7 +8,7 @@
 #include "src/chess/movegen.h"
 #include "src/chess/zobrist.h"
 
-#define EVALUATION_CACHE_SIZE (1 << 16)
+#define EVALUATION_CACHE_SIZE (1 << 17)
 
 typedef struct EvaluationCacheEntry {
     uint64_t key;

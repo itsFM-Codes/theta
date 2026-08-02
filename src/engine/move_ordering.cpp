@@ -13,6 +13,38 @@
 #define PROMOTION_MOVE_SCORE 15000
 #define GOOD_CAPTURE_SCORE 10000
 #define LOSING_CAPTURE_SCORE 1500
+#define PAWN_HISTORY_WEIGHT 2
+#define CORRECTION_HISTORY_LIMIT 1024
+
+static unsigned int pawn_history_index(const Position *position) {
+    uint64_t key;
+
+    if (position == 0) {
+        return 0;
+    }
+
+    if (position->pawn_history_key_valid &&
+        position->pawn_history_side_to_move == position->side_to_move) {
+        return (unsigned int)(
+            position->pawn_history_key & (PAWN_HISTORY_SIZE - 1)
+        );
+    }
+
+    key = position->piece_occupied[PIECE_WHITE_PAWN] *
+        UINT64_C(0x9e3779b97f4a7c15);
+    key ^= position->piece_occupied[PIECE_BLACK_PAWN] *
+        UINT64_C(0xbf58476d1ce4e5b9);
+    if (position->side_to_move == COLOR_BLACK) {
+        key ^= UINT64_C(0x632be59bd9b4e019);
+    }
+    key ^= key >> 29;
+    key *= UINT64_C(0x94d049bb133111eb);
+    key ^= key >> 31;
+    position->pawn_history_key = key;
+    position->pawn_history_key_valid = 1;
+    position->pawn_history_side_to_move = position->side_to_move;
+    return (unsigned int)(key & (PAWN_HISTORY_SIZE - 1));
+}
 
 static void update_history_score(int *score, int bonus) {
     if (score == 0) {
@@ -45,6 +77,10 @@ static void update_continuation_history_score(short *score, int bonus) {
         updated = -MAX_HISTORY_SCORE;
     }
     *score = (short)updated;
+}
+
+static void update_pawn_history_score(short *score, int bonus) {
+    update_continuation_history_score(score, bonus);
 }
 
 static int history_bonus(int depth) {
@@ -121,9 +157,12 @@ int quiet_history_score(
     int ply,
     Move move
 ) {
-    static const int offsets[3] = {1, 2, 4};
+    static const int offsets[6] = {1, 2, 4, 6, 8, 12};
     int score;
     int index;
+    int offset_count;
+    Piece moving_piece;
+    PieceType moving_type;
 
     if (context == 0 || context->shared_state == 0 ||
         context->shared_state->heuristics == 0 ||
@@ -133,34 +172,103 @@ int quiet_history_score(
 
     score = context->shared_state->heuristics
         ->history[color][move.from][move.to];
-    for (index = 0; index < 3; ++index) {
+    moving_piece = position_piece_at(position, move.from);
+    if (moving_piece == PIECE_NONE) {
+        moving_piece = position_piece_at(position, move.to);
+    }
+    moving_type = piece_type(moving_piece);
+    if (ply >= 2) {
+        score += pawn_history_score(
+            context,
+            position,
+            color,
+            moving_type,
+            move.to
+        ) / PAWN_HISTORY_WEIGHT;
+    }
+    offset_count = ply >= 6 ? 6 : 3;
+    for (index = 0; index < offset_count; ++index) {
         int previous_ply = ply - offsets[index];
 
         if (previous_ply >= 0 && previous_ply < MAX_SEARCH_PLY) {
             Move previous = context->line_moves[previous_ply];
             PieceType previous_type =
                 context->line_move_types[previous_ply];
-            Piece moving_piece = position_piece_at(position, move.from);
-            PieceType moving_type;
-
-            if (moving_piece == PIECE_NONE) {
-                moving_piece = position_piece_at(position, move.to);
-            }
-            moving_type = piece_type(moving_piece);
 
             if (is_valid_square(previous.from) &&
                 is_valid_square(previous.to) &&
                 previous_type != PIECE_TYPE_NONE &&
                 moving_type != PIECE_TYPE_NONE) {
                 int continuation = context->shared_state->heuristics
-                    ->continuation_history[previous_type][previous.to]
+                    ->continuation_history[index][previous_type][previous.to]
                         [moving_type][move.to];
 
-                score += index == 0 ? continuation : continuation / 2;
+                score += index == 0 ? continuation : continuation / 3;
             }
         }
     }
     return score;
+}
+
+int pawn_history_score(
+    const SearchContext *context,
+    const Position *position,
+    Color color,
+    PieceType moving_type,
+    int target_square
+) {
+    if (context == 0 || context->shared_state == 0 ||
+        context->shared_state->heuristics == 0 || position == 0 ||
+        color == COLOR_NONE || moving_type == PIECE_TYPE_NONE ||
+        !is_valid_square(target_square)) {
+        return 0;
+    }
+
+    return context->shared_state->heuristics
+        ->pawn_history[color][pawn_history_index(position)]
+            [moving_type][target_square];
+}
+
+int correction_history_score(
+    const SearchContext *context,
+    const Position *position
+) {
+    if (context == 0 || context->shared_state == 0 ||
+        context->shared_state->heuristics == 0 || position == 0) {
+        return 0;
+    }
+
+    return context->shared_state->heuristics
+        ->correction_history[pawn_history_index(position)];
+}
+
+void record_correction_history(
+    SearchContext *context,
+    const Position *position,
+    int score_delta
+) {
+    short *score;
+    int updated;
+
+    if (context == 0 || context->shared_state == 0 ||
+        context->shared_state->heuristics == 0 || position == 0) {
+        return;
+    }
+
+    if (score_delta > CORRECTION_HISTORY_LIMIT) {
+        score_delta = CORRECTION_HISTORY_LIMIT;
+    } else if (score_delta < -CORRECTION_HISTORY_LIMIT) {
+        score_delta = -CORRECTION_HISTORY_LIMIT;
+    }
+    score = &context->shared_state->heuristics
+        ->correction_history[pawn_history_index(position)];
+    updated = *score + (score_delta - *score) / 8;
+    if (updated > CORRECTION_HISTORY_LIMIT) {
+        updated = CORRECTION_HISTORY_LIMIT;
+    } else if (updated < -CORRECTION_HISTORY_LIMIT) {
+        updated = -CORRECTION_HISTORY_LIMIT;
+    }
+    *score = (short)updated;
 }
 
 static int counter_move_score(
@@ -195,6 +303,20 @@ static Piece captured_piece_for_move(const Position *position, Move move) {
     return position_piece_at(position, move.to);
 }
 
+static int move_needs_see(const Position *position, Move move) {
+    Piece attacker;
+    Piece victim;
+
+    if (position == 0 || (move.flags & MOVE_FLAG_CAPTURE) == 0) {
+        return 0;
+    }
+
+    attacker = position_piece_at(position, move.from);
+    victim = captured_piece_for_move(position, move);
+    return piece_value(victim) < piece_value(attacker) ||
+           (move.flags & MOVE_FLAG_PROMOTION) != 0;
+}
+
 int capture_history_score(
     const SearchContext *context,
     Color color,
@@ -220,7 +342,9 @@ static int move_order_score(
     int order_checks,
     const SearchContext *context,
     int ply,
-    const Move *table_move
+    const Move *table_move,
+    int see_score,
+    int see_valid
 ) {
     Piece attacker;
     Piece victim;
@@ -273,11 +397,12 @@ static int move_order_score(
             piece_type(victim)
         );
         int value_score = victim_value * 16 - attacker_value;
-        int see_score = 0;
 
         if (victim_value < attacker_value ||
             (move.flags & MOVE_FLAG_PROMOTION) != 0) {
-            see_score = static_exchange_evaluation(position, move);
+            if (!see_valid) {
+                see_score = static_exchange_evaluation(position, move);
+            }
             if (see_score < 0) {
                 return LOSING_CAPTURE_SCORE + history_score + see_score;
             }
@@ -285,6 +410,44 @@ static int move_order_score(
 
         return GOOD_CAPTURE_SCORE + promotion_score + value_score +
             history_score + see_score;
+    }
+}
+
+static void sort_picker(MovePicker *picker) {
+    Move sorted_moves[MAX_MOVES];
+    int sorted_scores[MAX_MOVES];
+    int sorted_see_scores[MAX_MOVES];
+    unsigned char sorted_see_valid[MAX_MOVES];
+    int index;
+
+    if (picker == 0 || picker->moves == 0) {
+        return;
+    }
+
+    for (index = 0; index < picker->moves->count; ++index) {
+        int insert = index;
+        int score = picker->scores[index];
+        int see_score = picker->see_scores[index];
+        unsigned char see_valid = picker->see_valid[index];
+
+        while (insert > 0 &&
+               sorted_scores[insert - 1] < score) {
+            sorted_scores[insert] = sorted_scores[insert - 1];
+            sorted_moves[insert] = sorted_moves[insert - 1];
+            sorted_see_scores[insert] = sorted_see_scores[insert - 1];
+            sorted_see_valid[insert] = sorted_see_valid[insert - 1];
+            insert--;
+        }
+        sorted_scores[insert] = score;
+        sorted_moves[insert] = picker->moves->moves[index];
+        sorted_see_scores[insert] = see_score;
+        sorted_see_valid[insert] = see_valid;
+    }
+    for (index = 0; index < picker->moves->count; ++index) {
+        picker->scores[index] = sorted_scores[index];
+        picker->moves->moves[index] = sorted_moves[index];
+        picker->see_scores[index] = sorted_see_scores[index];
+        picker->see_valid[index] = sorted_see_valid[index];
     }
 }
 
@@ -328,45 +491,33 @@ void initialize_move_picker(
     }
 
     for (index = 0; index < moves->count; ++index) {
+        picker->see_scores[index] = 0;
+        picker->see_valid[index] = 0;
+        if (move_needs_see(position, moves->moves[index])) {
+            picker->see_scores[index] = static_exchange_evaluation(
+                position,
+                moves->moves[index]
+            );
+            picker->see_valid[index] = 1;
+        }
         picker->scores[index] = move_order_score(
             position,
             moves->moves[index],
             order_checks,
             context,
             ply,
-            table_move
+            table_move,
+            picker->see_scores[index],
+            picker->see_valid[index]
         );
     }
-
+    sort_picker(picker);
 }
 
 int move_picker_next(MovePicker *picker, Move *move) {
-    int best_index;
-    int next;
-
     if (picker == 0 || picker->moves == 0 || move == 0 ||
         picker->next_index >= picker->moves->count) {
         return 0;
-    }
-
-    best_index = picker->next_index;
-    for (next = picker->next_index + 1;
-         next < picker->moves->count;
-         ++next) {
-        if (picker->scores[next] > picker->scores[best_index]) {
-            best_index = next;
-        }
-    }
-
-    if (best_index != picker->next_index) {
-        Move swapped_move = picker->moves->moves[picker->next_index];
-        int swapped_score = picker->scores[picker->next_index];
-
-        picker->moves->moves[picker->next_index] =
-            picker->moves->moves[best_index];
-        picker->moves->moves[best_index] = swapped_move;
-        picker->scores[picker->next_index] = picker->scores[best_index];
-        picker->scores[best_index] = swapped_score;
     }
 
     *move = picker->moves->moves[picker->next_index];
@@ -382,10 +533,11 @@ void record_quiet_cutoff(
     int depth,
     Move move
 ) {
-    static const int offsets[3] = {1, 2, 4};
+    static const int offsets[6] = {1, 2, 4, 6, 8, 12};
     int bonus;
     int *history_score;
     int index;
+    int offset_count = ply >= 6 ? 6 : 3;
 
     if (context == 0 || context->shared_state == 0 ||
         context->shared_state->heuristics == 0 ||
@@ -417,7 +569,14 @@ void record_quiet_cutoff(
         ->history[color][move.from][move.to];
     update_history_score(history_score, bonus);
 
-    for (index = 0; index < 3; ++index) {
+    update_pawn_history_score(
+        &context->shared_state->heuristics
+            ->pawn_history[color][pawn_history_index(position)]
+                [piece_type(position_piece_at(position, move.from))][move.to],
+        bonus
+    );
+
+    for (index = 0; index < offset_count; ++index) {
         int previous_ply = ply - offsets[index];
 
         if (previous_ply >= 0 && previous_ply < MAX_SEARCH_PLY) {
@@ -434,9 +593,9 @@ void record_quiet_cutoff(
                 moving_type != PIECE_TYPE_NONE) {
                 update_continuation_history_score(
                     &context->shared_state->heuristics
-                        ->continuation_history[previous_type][previous_move.to]
-                            [moving_type][move.to],
-                    index == 0 ? bonus : bonus / 2
+                        ->continuation_history[index][previous_type]
+                            [previous_move.to][moving_type][move.to],
+                    index == 0 ? bonus : index < 3 ? bonus / 2 : bonus / 4
                 );
             }
         }
@@ -452,9 +611,10 @@ void record_quiet_failures(
     const MoveList *moves,
     int count
 ) {
-    static const int offsets[3] = {1, 2, 4};
+    static const int offsets[6] = {1, 2, 4, 6, 8, 12};
     int index;
     int penalty;
+    int offset_count = ply >= 6 ? 6 : 3;
 
     if (context == 0 || context->shared_state == 0 ||
         context->shared_state->heuristics == 0 ||
@@ -478,8 +638,14 @@ void record_quiet_failures(
                     ->history[color][move.from][move.to],
                 penalty
             );
+            update_pawn_history_score(
+                &context->shared_state->heuristics
+                    ->pawn_history[color][pawn_history_index(position)]
+                        [moving_type][move.to],
+                penalty
+            );
             for (continuation_index = 0;
-                 continuation_index < 3;
+                 continuation_index < offset_count;
                  ++continuation_index) {
                 int previous_ply =
                     ply - offsets[continuation_index];
@@ -497,11 +663,14 @@ void record_quiet_failures(
                         moving_type != PIECE_TYPE_NONE) {
                         update_continuation_history_score(
                             &context->shared_state->heuristics
-                                ->continuation_history[previous_type]
-                                    [previous_move.to][moving_type][move.to],
+                                ->continuation_history[continuation_index]
+                                    [previous_type][previous_move.to]
+                                        [moving_type][move.to],
                             continuation_index == 0
                                 ? penalty
-                                : penalty / 2
+                                : continuation_index < 3
+                                    ? penalty / 2
+                                    : penalty / 4
                         );
                     }
                 }

@@ -15,9 +15,27 @@ private:
 };
 
 static int table_lock_index(const TranspositionTable *table, uint64_t bucket) {
+    if (table->lock_count > 0 &&
+        (table->lock_count & (table->lock_count - 1)) == 0) {
+        return (int)(bucket & (uint64_t)(table->lock_count - 1));
+    }
     return table->lock_count == 0
         ? 0
         : (int)(bucket % (uint64_t)table->lock_count);
+}
+
+static int table_bucket_start(
+    const TranspositionTable *table,
+    uint64_t key
+) {
+    uint64_t bucket;
+
+    if ((table->bucket_count & (table->bucket_count - 1)) == 0) {
+        bucket = key & (uint64_t)(table->bucket_count - 1);
+    } else {
+        bucket = key % (uint64_t)table->bucket_count;
+    }
+    return (int)bucket * TRANSPOSITION_CLUSTER_SIZE;
 }
 
 void initialize_transposition_table(TranspositionTable *table) {
@@ -125,8 +143,7 @@ int probe_transposition_table(
         statistics->probes++;
     }
 
-    bucket_start = (int)(key % (uint64_t)table->bucket_count) *
-        TRANSPOSITION_CLUSTER_SIZE;
+    bucket_start = table_bucket_start(table, key);
     TranspositionLock lock(table->locks[table_lock_index(
         table, (uint64_t)(bucket_start / TRANSPOSITION_CLUSTER_SIZE)
     )]);
@@ -178,8 +195,7 @@ int probe_transposition_static_evaluation(
         return 0;
     }
 
-    bucket_start = (int)(key % (uint64_t)table->bucket_count) *
-        TRANSPOSITION_CLUSTER_SIZE;
+    bucket_start = table_bucket_start(table, key);
     TranspositionLock lock(table->locks[table_lock_index(
         table, (uint64_t)(bucket_start / TRANSPOSITION_CLUSTER_SIZE)
     )]);
@@ -209,8 +225,7 @@ int probe_transposition_entry(
         return 0;
     }
 
-    bucket_start = (int)(key % (uint64_t)table->bucket_count) *
-        TRANSPOSITION_CLUSTER_SIZE;
+    bucket_start = table_bucket_start(table, key);
     TranspositionLock lock(table->locks[table_lock_index(
         table, (uint64_t)(bucket_start / TRANSPOSITION_CLUSTER_SIZE)
     )]);
@@ -244,8 +259,7 @@ static void store_transposition_table_internal(
         return;
     }
 
-    bucket_start = (int)(key % (uint64_t)table->bucket_count) *
-        TRANSPOSITION_CLUSTER_SIZE;
+    bucket_start = table_bucket_start(table, key);
     TranspositionLock lock(table->locks[table_lock_index(
         table, (uint64_t)(bucket_start / TRANSPOSITION_CLUSTER_SIZE)
     )]);

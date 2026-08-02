@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define PAWN_HASH_SIZE (1 << 14)
+#define PAWN_HASH_SIZE (1 << 15)
 #define FILE_A_MASK UINT64_C(0x0101010101010101)
 
 typedef struct PawnHashEntry {
@@ -29,23 +29,19 @@ static int pop_first_square(uint64_t *squares) {
 }
 
 static uint64_t pawn_structure_key(const Position *position) {
-    uint64_t key = UINT64_C(1469598103934665603);
-    uint64_t pieces = position->occupied;
+    uint64_t key = position->occupied * UINT64_C(0x9e3779b97f4a7c15);
 
-    while (pieces != 0) {
-        int square = pop_first_square(&pieces);
-        Piece piece = position_piece_at(position, square);
-        PieceType type = piece_type(piece);
-
-        if (type == PIECE_TYPE_PAWN || type == PIECE_TYPE_KING) {
-            key ^= (uint64_t)(piece + 1) * 67u + (uint64_t)square;
-            key *= UINT64_C(1099511628211);
-        } else if (type != PIECE_TYPE_NONE) {
-            // Only occupancy affects pawn blockage.
-            key ^= UINT64_C(4099) + (uint64_t)square;
-            key *= UINT64_C(1099511628211);
-        }
-    }
+    key ^= position->piece_occupied[PIECE_WHITE_PAWN] *
+        UINT64_C(0xbf58476d1ce4e5b9);
+    key ^= position->piece_occupied[PIECE_BLACK_PAWN] *
+        UINT64_C(0x94d049bb133111eb);
+    key ^= position->piece_occupied[PIECE_WHITE_KING] *
+        UINT64_C(0x632be59bd9b4e019);
+    key ^= position->piece_occupied[PIECE_BLACK_KING] *
+        UINT64_C(0xd6e8feb86659fd93);
+    key ^= key >> 29;
+    key *= UINT64_C(0x94d049bb133111eb);
+    key ^= key >> 31;
     return key;
 }
 

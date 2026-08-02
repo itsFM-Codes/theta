@@ -541,7 +541,14 @@ static int late_move_pruning_threshold(
     int is_pv_node,
     int improving
 ) {
-    int threshold = LATE_MOVE_PRUNING_START + depth * depth;
+    int threshold;
+
+    if (!is_pv_node) {
+        threshold = (LATE_MOVE_PRUNING_START + depth * depth) /
+            (2 - improving);
+    } else {
+        threshold = LATE_MOVE_PRUNING_START + depth * depth;
+    }
 
     if (is_pv_node) {
         threshold += 3;
@@ -574,11 +581,8 @@ static int null_move_reduction(int depth, int static_score, int beta) {
 }
 
 static int null_move_static_margin(int depth, int improving) {
-    int margin = 96 - depth * 8;
+    int margin = 365 - depth * 13 - (improving ? 47 : 0);
 
-    if (improving) {
-        margin -= 24;
-    }
     return margin > 0 ? margin : 0;
 }
 
@@ -631,6 +635,21 @@ static int search_static_evaluation(
     return score;
 }
 
+static int corrected_static_evaluation(
+    Position *position,
+    SearchContext *context,
+    int ply,
+    int raw_score
+) {
+    int score = raw_score + correction_history_score(context, position) / 2;
+
+    if (context != 0 && ply >= 0 && ply < MAX_SEARCH_PLY) {
+        context->static_evaluations[ply] = score;
+        context->static_evaluation_valid[ply] = 1;
+    }
+    return score;
+}
+
 static int position_is_improving(
     const SearchContext *context,
     int ply,
@@ -653,10 +672,14 @@ static int adjusted_late_move_reduction(
     int move_index,
     int is_pv_node,
     int improving,
-    Move move
+    Move move,
+    int move_history,
+    int capture_history
 ) {
     int reduction = late_move_reduction(depth, move_index);
-    int history_score = 0;
+    int history_score = move_is_quiet(move)
+        ? move_history
+        : capture_history;
 
     if (reduction <= 0) {
         return 0;
@@ -671,7 +694,8 @@ static int adjusted_late_move_reduction(
         reduction++;
     }
 
-    if (context != 0 && moving_color != COLOR_NONE) {
+    if (context != 0 && moving_color != COLOR_NONE &&
+        history_score == 0) {
         history_score = quiet_history_score(
             context,
             position,
@@ -686,12 +710,20 @@ static int adjusted_late_move_reduction(
     } else if (history_score < -SEARCH_HISTORY_LIMIT / 3) {
         reduction++;
     }
+    if (history_score > SEARCH_HISTORY_LIMIT * 2) {
+        reduction--;
+    } else if (history_score < -SEARCH_HISTORY_LIMIT * 2) {
+        reduction++;
+    }
 
     if (reduction < 0) {
         reduction = 0;
     }
     if (reduction > depth - 2) {
         reduction = depth - 2;
+    }
+    if (reduction > 1) {
+        reduction--;
     }
 
     return reduction;
@@ -731,6 +763,7 @@ static int negamax(
     int table_score;
     int in_check;
     int static_score;
+    int raw_static_score;
     int pruning_score;
     int table_entry_score = 0;
     int improving;
@@ -826,11 +859,17 @@ static int negamax(
         return table_score;
     }
 
-    static_score = search_static_evaluation(
+    raw_static_score = search_static_evaluation(
         position,
         context,
         ply,
         &table_entry
+    );
+    static_score = corrected_static_evaluation(
+        position,
+        context,
+        ply,
+        raw_static_score
     );
     pruning_score = static_score;
     if (table_entry.is_valid) {
@@ -1021,6 +1060,7 @@ skip_null_cutoff:
             UndoState probcut_undo;
             int tactical_score;
             int probcut_score;
+            int probcut_index = probcut_picker.next_index - 1;
 
             if ((probcut_move.flags &
                  (MOVE_FLAG_CAPTURE | MOVE_FLAG_PROMOTION)) == 0) {
@@ -1029,13 +1069,17 @@ skip_null_cutoff:
             if ((probcut_move.flags & MOVE_FLAG_PROMOTION) == 0) {
                 int see_score;
 
-                if (context != 0) {
-                    context->see_calls++;
+                if (probcut_picker.see_valid[probcut_index]) {
+                    see_score = probcut_picker.see_scores[probcut_index];
+                } else {
+                    if (context != 0) {
+                        context->see_calls++;
+                    }
+                    see_score = static_exchange_evaluation(
+                        position,
+                        probcut_move
+                    );
                 }
-                see_score = static_exchange_evaluation(
-                    position,
-                    probcut_move
-                );
                 if (see_score < 0) {
                     continue;
                 }
@@ -1105,19 +1149,18 @@ skip_null_cutoff:
         depth--;
     }
 
-    if (excluded_move == 0 && depth >= 6 &&
+    if (excluded_move == 0 && depth >= 6 + is_pv_node &&
         is_valid_square(table_move.from) &&
         is_valid_square(table_move.to)) {
-        if (table_entry.is_valid && table_entry.depth >= depth - 2 &&
-            (table_entry.flag == TRANSPOSITION_EXACT ||
-             table_entry.flag == TRANSPOSITION_LOWER_BOUND)) {
+        if (table_entry.is_valid && table_entry.depth >= depth - 3 &&
+            table_entry.flag == TRANSPOSITION_LOWER_BOUND) {
             PrincipalVariation singular_variation;
             int entry_score = search_score_from_table(
                 table_entry.score,
                 ply
             );
             int singular_beta = entry_score -
-                depth * 2;
+                (59 * depth) / 63;
             int singular_score;
 
             context->singular_attempts++;
@@ -1138,12 +1181,20 @@ skip_null_cutoff:
             }
             if (singular_score < singular_beta) {
                 singular_move = table_move;
-                singular_extension = singular_score <
-                    singular_beta - 2 * depth ? 2 : 1;
+                singular_extension = 1;
+                if (singular_score < singular_beta - 2 * depth) {
+                    singular_extension++;
+                }
+                if (singular_score < singular_beta - 3 * depth) {
+                    singular_extension++;
+                }
                 context->singular_extensions++;
             } else if (!is_pv_node && entry_score >= beta &&
                        singular_score >= beta) {
                 return singular_score;
+            } else if (entry_score >= beta) {
+                singular_move = table_move;
+                singular_extension = -2;
             }
         }
     }
@@ -1169,6 +1220,7 @@ skip_null_cutoff:
         int quiet_move;
         int see_score = 0;
         int capture_history = 0;
+        int move_history = 0;
         Color moving_color;
         PieceType moving_type;
         int move_index;
@@ -1189,14 +1241,27 @@ skip_null_cutoff:
         quiet_move = move_is_quiet(move);
         moving_color = position->side_to_move;
         moving_type = piece_type(position_piece_at(position, move.from));
+        if (quiet_move) {
+            move_history = quiet_history_score(
+                context,
+                position,
+                moving_color,
+                ply,
+                move
+            );
+        }
 
         if (!quiet_move &&
             (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
             depth <= 4 && !in_check) {
-            if (context != 0) {
-                context->see_calls++;
+            if (move_picker.see_valid[index]) {
+                see_score = move_picker.see_scores[index];
+            } else {
+                if (context != 0) {
+                    context->see_calls++;
+                }
+                see_score = static_exchange_evaluation(position, move);
             }
-            see_score = static_exchange_evaluation(position, move);
         }
 
         if (context != 0) {
@@ -1228,13 +1293,7 @@ skip_null_cutoff:
         if (depth >= 4 && !is_pv_node && !in_check &&
             move_index >= 4 && quiet_move && !gives_check &&
             !promotes_pawn && !creates_threat &&
-            quiet_history_score(
-                context,
-                position,
-                moving_color,
-                ply,
-                move
-            ) < -HISTORY_PRUNE_BASE - depth * 100) {
+            move_history < -HISTORY_PRUNE_BASE - depth * 100) {
             if (context != 0) {
                 context->late_move_prunes++;
             }
@@ -1311,7 +1370,9 @@ skip_null_cutoff:
                 move_index,
                 is_pv_node,
                 improving,
-                move
+                move,
+                move_history,
+                capture_history
             );
 
             if (!quiet_move && reduction > 0) {
@@ -1457,6 +1518,13 @@ skip_null_cutoff:
     }
 
     if (excluded_move == 0) {
+        if (depth >= 3 && best_score > original_alpha && best_score < beta) {
+            record_correction_history(
+                context,
+                position,
+                best_score - raw_static_score
+            );
+        }
         store_transposition_table_with_static_evaluation(
             &context->shared_state->transposition_table,
             key,
