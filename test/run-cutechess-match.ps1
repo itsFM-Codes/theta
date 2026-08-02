@@ -5,6 +5,7 @@ param(
     [int]$Concurrency = 1,
     [int]$HashMb = 16,
     [int]$TimeMarginMs = 250,
+    [string]$ThetaEngine = "",
     [ValidateSet("true", "false")]
     [string]$ThetaAllowDraws = "true",
     [ValidateSet("sequential", "random")]
@@ -13,7 +14,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$theta = Join-Path $root "build\theta.exe"
+$theta = if ($ThetaEngine) {
+    (Resolve-Path $ThetaEngine).Path
+} else {
+    Join-Path $root "build\theta.exe"
+}
 $stockfish = Join-Path $PSScriptRoot "stockfish-18.exe"
 $openings = Join-Path $PSScriptRoot "cutechess-openings.epd"
 $cutechess = Get-ChildItem -LiteralPath $PSScriptRoot -Filter "cutechess-cli.exe" -Recurse |

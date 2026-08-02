@@ -15,6 +15,22 @@ static int count_moves_with_flag(const MoveList *moves, int flag) {
     return count;
 }
 
+static void assert_attack_map_matches(const Position *position) {
+    Color color;
+
+    for (color = COLOR_WHITE; color <= COLOR_BLACK;
+         color = (Color)(color + 1)) {
+        uint64_t attacks = position_attack_map(position, color);
+        int square;
+
+        for (square = 0; square < SQUARE_COUNT; ++square) {
+            int mapped = (attacks & (UINT64_C(1) << square)) != 0;
+
+            assert(mapped == is_square_attacked(position, square, color));
+        }
+    }
+}
+
 int main(void) {
     Position position;
     MoveList moves;
@@ -23,6 +39,7 @@ int main(void) {
     generate_moves(&position, &moves);
     assert(moves.count == 20);
     assert(count_moves_with_flag(&moves, MOVE_FLAG_DOUBLE_PAWN) == 8);
+    assert_attack_map_matches(&position);
 
     clear_position(&position);
     position_set_piece_at_coordinates(
@@ -83,6 +100,7 @@ int main(void) {
     generate_moves(&position, &moves);
     assert(count_moves_with_flag(&moves, MOVE_FLAG_CASTLE_KINGSIDE) == 1);
     assert(count_moves_with_flag(&moves, MOVE_FLAG_CASTLE_QUEENSIDE) == 1);
+    assert_attack_map_matches(&position);
 
     return 0;
 }

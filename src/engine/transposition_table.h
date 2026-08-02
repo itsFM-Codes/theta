@@ -24,12 +24,12 @@ typedef enum TranspositionFlag {
 typedef struct TranspositionEntry {
     uint64_t key;
     Move best_move;
-    int score;
-    int static_evaluation;
-    int depth;
-    int flag;
-    int is_valid;
-    int has_static_evaluation;
+    int16_t score;
+    int16_t static_evaluation;
+    int16_t depth;
+    uint8_t flag;
+    uint8_t is_valid;
+    uint8_t has_static_evaluation;
     uint8_t generation;
 } TranspositionEntry;
 

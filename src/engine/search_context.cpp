@@ -59,10 +59,6 @@ void initialize_search_context(
     context->selective_depth = 0;
     context->position_key_count = 0;
     context->draw_score = 0;
-    memset(context->history, 0, sizeof(context->history));
-    memset(context->continuation_history, 0,
-           sizeof(context->continuation_history));
-    memset(context->capture_history, 0, sizeof(context->capture_history));
     memset(context->static_evaluation_valid, 0,
            sizeof(context->static_evaluation_valid));
     context->shared_state = shared_state;
@@ -86,6 +82,7 @@ void initialize_search_context(
 
     for (ply = 0; ply < MAX_SEARCH_PLY; ++ply) {
         clear_move(&context->line_moves[ply]);
+        context->line_move_types[ply] = PIECE_TYPE_NONE;
         context->static_evaluations[ply] = 0;
     }
 }

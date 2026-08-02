@@ -6,3 +6,6 @@ test/stockfish-*.exe
 test/cutechess-*.zip
 test/cutechess-*-win64/
 test/results/
+
+# Local references
+local/

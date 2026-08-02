@@ -6,6 +6,9 @@
 typedef struct MovePicker {
     MoveList *moves;
     int scores[MAX_MOVES];
+    int see_scores[MAX_MOVES];
+    unsigned char see_valid[MAX_MOVES];
+    uint64_t threat_by_lesser[PIECE_TYPE_KING + 1];
     int next_index;
 } MovePicker;
 
@@ -19,6 +22,37 @@ void initialize_move_picker(
     const Move *table_move
 );
 int move_picker_next(MovePicker *picker, Move *move);
+int quiet_history_score(
+    const SearchContext *context,
+    const Position *position,
+    Color color,
+    int ply,
+    Move move
+);
+int pawn_history_score(
+    const SearchContext *context,
+    const Position *position,
+    Color color,
+    PieceType moving_type,
+    int target_square
+);
+int capture_history_score(
+    const SearchContext *context,
+    Color color,
+    PieceType attacker_type,
+    int target_square,
+    PieceType captured_type
+);
+
+int correction_history_score(
+    const SearchContext *context,
+    const Position *position
+);
+void record_correction_history(
+    SearchContext *context,
+    const Position *position,
+    int score_delta
+);
 
 void order_moves(
     Position *position,
@@ -39,7 +73,9 @@ void record_quiet_cutoff(
 );
 void record_quiet_failures(
     SearchContext *context,
+    const Position *position,
     Color color,
+    int ply,
     int depth,
     const MoveList *moves,
     int count

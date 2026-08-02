@@ -1,5 +1,6 @@
 #include "piece_activity.h"
 #include "eval_params.h"
+#include "src/chess/movegen.h"
 
 #define FILE_A_MASK UINT64_C(0x0101010101010101)
 
@@ -13,95 +14,18 @@ static int file_has_pawn(const Position *position, int column, Color color) {
     return (position->piece_occupied[pawn] & (FILE_A_MASK << column)) != 0;
 }
 
-static int pawn_controls_square(
-    const Position *position,
-    Color color,
-    int target_square
-) {
-    int target_row = square_row(target_square);
-    int target_column = square_column(target_square);
-    int pawn_row = color == COLOR_WHITE ? target_row + 1 : target_row - 1;
-    Piece pawn = color == COLOR_WHITE ? PIECE_WHITE_PAWN : PIECE_BLACK_PAWN;
-    int file;
-
-    if (pawn_row < 0 || pawn_row >= BOARD_SIZE) {
-        return 0;
-    }
-
-    for (file = target_column - 1; file <= target_column + 1; file += 2) {
-        if (file >= 0 && file < BOARD_SIZE &&
-            position_piece_at_coordinates(position, pawn_row, file) == pawn) {
-            return 1;
-        }
-    }
-
-    return 0;
-}
-
-static int bishop_mobility_direction(
-    const Position *position,
-    int row,
-    int column,
-    int row_step,
-    int column_step,
-    Color color
-) {
-    int count = 0;
-
-    row += row_step;
-    column += column_step;
-    while (is_valid_coordinate(row, column)) {
-        Piece piece = position_piece_at_coordinates(position, row, column);
-
-        if (piece_color(piece) == color) {
-            break;
-        }
-
-        count++;
-        if (piece != PIECE_NONE) {
-            break;
-        }
-
-        row += row_step;
-        column += column_step;
-    }
-
-    return count;
-}
-
 static int bishop_mobility(const Position *position, int square, Color color) {
-    int row = square_row(square);
-    int column = square_column(square);
-
-    return bishop_mobility_direction(position, row, column, -1, -1, color) +
-           bishop_mobility_direction(position, row, column, -1, 1, color) +
-           bishop_mobility_direction(position, row, column, 1, -1, color) +
-           bishop_mobility_direction(position, row, column, 1, 1, color);
+    return __builtin_popcountll(
+        position_piece_attack_map(position, square, PIECE_TYPE_BISHOP) &
+        ~position->color_occupied[color]
+    );
 }
 
 static int knight_mobility(const Position *position, int square, Color color) {
-    static const int OFFSETS[8][2] = {
-        {-2, -1}, {-2, 1}, {-1, -2}, {-1, 2},
-        {1, -2}, {1, 2}, {2, -1}, {2, 1}
-    };
-    int row = square_row(square);
-    int column = square_column(square);
-    int mobility = 0;
-    int index;
-
-    for (index = 0; index < 8; ++index) {
-        int target_row = row + OFFSETS[index][0];
-        int target_column = column + OFFSETS[index][1];
-        if (is_valid_coordinate(target_row, target_column) &&
-            piece_color(position_piece_at_coordinates(
-                position,
-                target_row,
-                target_column
-            )) != color) {
-            mobility++;
-        }
-    }
-    return mobility;
+    return __builtin_popcountll(
+        position_piece_attack_map(position, square, PIECE_TYPE_KNIGHT) &
+        ~position->color_occupied[color]
+    );
 }
 
 static int pawns_on_square_color(
@@ -149,11 +73,13 @@ static int bad_bishop_penalty(
 }
 
 static int knight_is_outpost(
-    const Position *position,
     int square,
-    Color color
+    Color color,
+    uint64_t friendly_pawn_attacks,
+    uint64_t enemy_pawn_attacks
 ) {
     int row = square_row(square);
+    uint64_t mask = UINT64_C(1) << square;
 
     if (color == COLOR_WHITE) {
         if (row < 2 || row > 4) {
@@ -163,8 +89,8 @@ static int knight_is_outpost(
         return 0;
     }
 
-    return pawn_controls_square(position, color, square) &&
-           !pawn_controls_square(position, opposite_color(color), square);
+    return (friendly_pawn_attacks & mask) != 0 &&
+           (enemy_pawn_attacks & mask) == 0;
 }
 
 static int rook_on_seventh_rank(int square, Color color) {
@@ -185,6 +111,14 @@ static int side_piece_activity_score(
     Piece rook = color == COLOR_WHITE ? PIECE_WHITE_ROOK : PIECE_BLACK_ROOK;
     int bishops = 0;
     int score = 0;
+    uint64_t friendly_pawn_attacks = position_pawn_attack_map(
+        position,
+        color
+    );
+    uint64_t enemy_pawn_attacks = position_pawn_attack_map(
+        position,
+        opposite_color(color)
+    );
     uint64_t pieces = position->piece_occupied[bishop] |
         position->piece_occupied[knight] |
         position->piece_occupied[rook];
@@ -202,7 +136,12 @@ static int side_piece_activity_score(
                 score -= (3 - mobility) * params->trapped_minor_penalty;
             }
         } else if (piece == knight) {
-            if (knight_is_outpost(position, square, color)) {
+            if (knight_is_outpost(
+                    square,
+                    color,
+                    friendly_pawn_attacks,
+                    enemy_pawn_attacks
+                )) {
                 score += params->knight_outpost_bonus;
             }
             if (knight_mobility(position, square, color) <= 1) {

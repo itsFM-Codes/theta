@@ -53,6 +53,17 @@ void clear_position(Position *position) {
     position->zobrist_side_to_move = COLOR_NONE;
     position->zobrist_castling_rights = CASTLING_NONE;
     position->zobrist_en_passant_square = NO_SQUARE;
+    position->pawn_history_key = 0;
+    position->pawn_history_key_valid = 0;
+    position->pawn_history_side_to_move = COLOR_NONE;
+    position->attack_map_cache[COLOR_WHITE] = 0;
+    position->attack_map_cache[COLOR_BLACK] = 0;
+    position->attack_map_cache_valid = 0;
+    for (square = 0; square < SQUARE_COUNT; ++square) {
+        position->sliding_attack_cache_valid[square][0] = 0;
+        position->sliding_attack_cache_valid[square][1] = 0;
+        position->sliding_attack_cache_valid[square][2] = 0;
+    }
 }
 
 void set_starting_position(Position *position) {
