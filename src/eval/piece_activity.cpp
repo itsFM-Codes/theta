@@ -22,28 +22,10 @@ static int bishop_mobility(const Position *position, int square, Color color) {
 }
 
 static int knight_mobility(const Position *position, int square, Color color) {
-    static const int OFFSETS[8][2] = {
-        {-2, -1}, {-2, 1}, {-1, -2}, {-1, 2},
-        {1, -2}, {1, 2}, {2, -1}, {2, 1}
-    };
-    int row = square_row(square);
-    int column = square_column(square);
-    int mobility = 0;
-    int index;
-
-    for (index = 0; index < 8; ++index) {
-        int target_row = row + OFFSETS[index][0];
-        int target_column = column + OFFSETS[index][1];
-        if (is_valid_coordinate(target_row, target_column) &&
-            piece_color(position_piece_at_coordinates(
-                position,
-                target_row,
-                target_column
-            )) != color) {
-            mobility++;
-        }
-    }
-    return mobility;
+    return __builtin_popcountll(
+        position_piece_attack_map(position, square, PIECE_TYPE_KNIGHT) &
+        ~position->color_occupied[color]
+    );
 }
 
 static int pawns_on_square_color(

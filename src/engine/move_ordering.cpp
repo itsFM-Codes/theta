@@ -172,6 +172,10 @@ int quiet_history_score(
 
     score = context->shared_state->heuristics
         ->history[color][move.from][move.to];
+    if (ply >= 0 && ply < LOW_PLY_HISTORY_SIZE) {
+        score += 8 * context->shared_state->heuristics
+            ->low_ply_history[ply][color][move.from][move.to] / (1 + ply);
+    }
     moving_piece = position_piece_at(position, move.from);
     if (moving_piece == PIECE_NONE) {
         moving_piece = position_piece_at(position, move.to);
@@ -317,6 +321,79 @@ static int move_needs_see(const Position *position, Move move) {
            (move.flags & MOVE_FLAG_PROMOTION) != 0;
 }
 
+static uint64_t attacks_for_piece_type(
+    const Position *position,
+    Color color,
+    PieceType type
+) {
+    Piece piece;
+    uint64_t pieces;
+    uint64_t attacks = 0;
+
+    if (position == 0 || color == COLOR_NONE ||
+        type == PIECE_TYPE_NONE || type == PIECE_TYPE_KING) {
+        return 0;
+    }
+
+    if (type == PIECE_TYPE_PAWN) {
+        return position_pawn_attack_map(position, color);
+    }
+
+    piece = (Piece)((color == COLOR_WHITE ? PIECE_WHITE_PAWN
+                                          : PIECE_BLACK_PAWN) + type -
+                    PIECE_TYPE_PAWN);
+    pieces = position->piece_occupied[piece];
+    while (pieces != 0) {
+        int square = __builtin_ctzll(pieces);
+
+        attacks |= position_piece_attack_map(position, square, type);
+        pieces &= pieces - 1;
+    }
+    return attacks;
+}
+
+static void initialize_threat_by_lesser(
+    const Position *position,
+    uint64_t *threat_by_lesser
+) {
+    Color enemy;
+    uint64_t pawn_attacks;
+    uint64_t knight_attacks;
+    uint64_t bishop_attacks;
+    uint64_t rook_attacks;
+    int type;
+
+    if (threat_by_lesser == 0) {
+        return;
+    }
+    for (type = 0; type <= PIECE_TYPE_KING; ++type) {
+        threat_by_lesser[type] = 0;
+    }
+    if (position == 0 || position->side_to_move == COLOR_NONE) {
+        return;
+    }
+
+    enemy = opposite_color(position->side_to_move);
+    pawn_attacks = attacks_for_piece_type(
+        position, enemy, PIECE_TYPE_PAWN
+    );
+    knight_attacks = attacks_for_piece_type(
+        position, enemy, PIECE_TYPE_KNIGHT
+    );
+    bishop_attacks = attacks_for_piece_type(
+        position, enemy, PIECE_TYPE_BISHOP
+    );
+    rook_attacks = attacks_for_piece_type(
+        position, enemy, PIECE_TYPE_ROOK
+    );
+    threat_by_lesser[PIECE_TYPE_KNIGHT] = pawn_attacks;
+    threat_by_lesser[PIECE_TYPE_BISHOP] = pawn_attacks;
+    threat_by_lesser[PIECE_TYPE_ROOK] = pawn_attacks |
+        knight_attacks | bishop_attacks;
+    threat_by_lesser[PIECE_TYPE_QUEEN] = threat_by_lesser[PIECE_TYPE_ROOK] |
+        rook_attacks;
+}
+
 int capture_history_score(
     const SearchContext *context,
     Color color,
@@ -344,7 +421,8 @@ static int move_order_score(
     int ply,
     const Move *table_move,
     int see_score,
-    int see_valid
+    int see_valid,
+    const uint64_t *threat_by_lesser
 ) {
     Piece attacker;
     Piece victim;
@@ -361,6 +439,9 @@ static int move_order_score(
     if ((move.flags & MOVE_FLAG_CAPTURE) == 0) {
         int killer_score;
         int reply_score;
+        int threat_score = 0;
+
+        attacker = position_piece_at(position, move.from);
 
         if (order_checks && move_gives_check(position, move)) {
             return CHECK_MOVE_SCORE;
@@ -376,7 +457,18 @@ static int move_order_score(
             return reply_score;
         }
 
-        return quiet_history_score(
+        if (threat_by_lesser != 0) {
+            PieceType type = piece_type(attacker);
+            if (type >= PIECE_TYPE_PAWN && type <= PIECE_TYPE_QUEEN) {
+                threat_score = 20 * (
+                    ((threat_by_lesser[type] >> move.from) & 1) -
+                    ((threat_by_lesser[type] >> move.to) & 1)
+                );
+                threat_score *= piece_value(attacker);
+            }
+        }
+
+        return threat_score + quiet_history_score(
             context, position, position->side_to_move, ply, move
         );
     }
@@ -486,6 +578,7 @@ void initialize_move_picker(
 
     picker->moves = moves;
     picker->next_index = 0;
+    initialize_threat_by_lesser(position, picker->threat_by_lesser);
     if (position == 0 || moves == 0) {
         return;
     }
@@ -508,7 +601,8 @@ void initialize_move_picker(
             ply,
             table_move,
             picker->see_scores[index],
-            picker->see_valid[index]
+            picker->see_valid[index],
+            picker->threat_by_lesser
         );
     }
     sort_picker(picker);
@@ -568,6 +662,13 @@ void record_quiet_cutoff(
     history_score = &context->shared_state->heuristics
         ->history[color][move.from][move.to];
     update_history_score(history_score, bonus);
+    if (ply < LOW_PLY_HISTORY_SIZE) {
+        update_continuation_history_score(
+            &context->shared_state->heuristics
+                ->low_ply_history[ply][color][move.from][move.to],
+            bonus * 712 / 1024
+        );
+    }
 
     update_pawn_history_score(
         &context->shared_state->heuristics
@@ -638,6 +739,13 @@ void record_quiet_failures(
                     ->history[color][move.from][move.to],
                 penalty
             );
+            if (ply >= 0 && ply < LOW_PLY_HISTORY_SIZE) {
+                update_continuation_history_score(
+                    &context->shared_state->heuristics
+                        ->low_ply_history[ply][color][move.from][move.to],
+                    penalty * 712 / 1024
+                );
+            }
             update_pawn_history_score(
                 &context->shared_state->heuristics
                     ->pawn_history[color][pawn_history_index(position)]

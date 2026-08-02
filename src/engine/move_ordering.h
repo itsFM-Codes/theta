@@ -8,6 +8,7 @@ typedef struct MovePicker {
     int scores[MAX_MOVES];
     int see_scores[MAX_MOVES];
     unsigned char see_valid[MAX_MOVES];
+    uint64_t threat_by_lesser[PIECE_TYPE_KING + 1];
     int next_index;
 } MovePicker;
 

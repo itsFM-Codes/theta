@@ -297,6 +297,7 @@ uint64_t position_piece_attack_map(
     };
     int first_direction;
     int last_direction;
+    int cache_index = -1;
     uint64_t attacks = 0;
     int direction;
 
@@ -308,16 +309,25 @@ uint64_t position_piece_attack_map(
     if (type == PIECE_TYPE_BISHOP) {
         first_direction = 0;
         last_direction = 3;
+        cache_index = 0;
     } else if (type == PIECE_TYPE_ROOK) {
         first_direction = 4;
         last_direction = 7;
+        cache_index = 1;
     } else if (type == PIECE_TYPE_QUEEN) {
         first_direction = 0;
         last_direction = 7;
+        cache_index = 2;
     } else {
         return type == PIECE_TYPE_KNIGHT
             ? knight_attack_masks[square]
             : (type == PIECE_TYPE_KING ? king_attack_masks[square] : 0);
+    }
+
+    if (position->sliding_attack_cache_valid[square][cache_index] &&
+        position->sliding_attack_cache_keys[square][cache_index] ==
+            position->occupied) {
+        return position->sliding_attack_cache[square][cache_index];
     }
 
     for (direction = first_direction;
@@ -339,6 +349,10 @@ uint64_t position_piece_attack_map(
         }
     }
 
+    position->sliding_attack_cache[square][cache_index] = attacks;
+    position->sliding_attack_cache_keys[square][cache_index] =
+        position->occupied;
+    position->sliding_attack_cache_valid[square][cache_index] = 1;
     return attacks;
 }
 

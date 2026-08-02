@@ -14,30 +14,10 @@ static int piece_mobility(const Position *position, int square, PieceType type) 
 }
 
 static int knight_mobility(const Position *position, int square, Color color) {
-    static const int OFFSETS[8][2] = {
-        {-2, -1}, {-2, 1}, {-1, -2}, {-1, 2},
-        {1, -2}, {1, 2}, {2, -1}, {2, 1}
-    };
-    int row = square_row(square);
-    int column = square_column(square);
-    int count = 0;
-    int index;
-
-    for (index = 0; index < 8; ++index) {
-        int target_row = row + OFFSETS[index][0];
-        int target_column = column + OFFSETS[index][1];
-
-        if (is_valid_coordinate(target_row, target_column) &&
-            piece_color(position_piece_at_coordinates(
-                position,
-                target_row,
-                target_column
-            )) != color) {
-            count++;
-        }
-    }
-
-    return count;
+    return __builtin_popcountll(
+        position_piece_attack_map(position, square, PIECE_TYPE_KNIGHT) &
+        ~position->color_occupied[color]
+    );
 }
 
 int mobility_score(const Position *position) {

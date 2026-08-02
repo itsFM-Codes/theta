@@ -35,6 +35,9 @@ typedef struct Position {
     mutable Color pawn_history_side_to_move;
     mutable uint64_t attack_map_cache[COLOR_NONE];
     mutable int attack_map_cache_valid;
+    mutable uint64_t sliding_attack_cache[SQUARE_COUNT][3];
+    mutable uint64_t sliding_attack_cache_keys[SQUARE_COUNT][3];
+    mutable unsigned char sliding_attack_cache_valid[SQUARE_COUNT][3];
 } Position;
 
 void clear_position(Position *position);
