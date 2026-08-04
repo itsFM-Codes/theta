@@ -106,7 +106,7 @@ static int quiescence_search_internal(
         if (context != 0) {
             context->raw_evaluations++;
         }
-        return evaluate_position(position);
+        return search_evaluate_position(context, position, ply);
     }
 
     if (context != 0) {
@@ -176,7 +176,7 @@ static int quiescence_search_internal(
             if (context != 0) {
                 context->raw_evaluations++;
             }
-            stand_pat = evaluate_position(position);
+            stand_pat = search_evaluate_position(context, position, ply);
         } else {
             stand_pat += correction_history_score(context, position) / 2;
         }
@@ -268,6 +268,7 @@ static int quiescence_search_internal(
             continue;
         }
         legal_move_count++;
+        search_update_nnue_state(context, position, &move, &undo, ply);
 
         search_push_position(context, position);
         if (context != 0 && ply >= 0 && ply < MAX_SEARCH_PLY) {

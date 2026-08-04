@@ -625,7 +625,7 @@ static int search_static_evaluation(
     if (context != 0) {
         context->raw_evaluations++;
     }
-    score = evaluate_position(position);
+    score = search_evaluate_position(context, position, ply);
 
     if (context != 0 && ply >= 0 && ply < MAX_SEARCH_PLY) {
         context->static_evaluations[ply] = score;
@@ -797,7 +797,7 @@ static int negamax(
         if (context != 0) {
             context->raw_evaluations++;
         }
-        return evaluate_position(position);
+        return search_evaluate_position(context, position, ply);
     }
 
     if (alpha < -SEARCH_CHECKMATE + ply) {
@@ -979,6 +979,7 @@ static int negamax(
             context->line_move_types[ply] = PIECE_TYPE_NONE;
         }
         search_push_position(context, &null_position);
+        search_copy_nnue_state(context, ply, ply + 1);
         null_score = -negamax(
             &null_position,
             depth - 1 - reduction,
@@ -1090,6 +1091,14 @@ skip_null_cutoff:
             if (!make_legal_move(position, probcut_move, &probcut_undo)) {
                 continue;
             }
+
+            search_update_nnue_state(
+                context,
+                position,
+                &probcut_move,
+                &probcut_undo,
+                ply
+            );
 
             search_push_position(context, position);
             if (context != 0 && ply >= 0 && ply < MAX_SEARCH_PLY) {
@@ -1271,6 +1280,7 @@ skip_null_cutoff:
             continue;
         }
 
+        search_update_nnue_state(context, position, &move, &undo, ply);
         move_index = legal_move_count++;
         gives_check = position_is_in_check(position);
         if (!quiet_move) {
@@ -1583,7 +1593,7 @@ static int search_position_with_variation(
         if (context != 0) {
             context->raw_evaluations++;
         }
-        return evaluate_position(position);
+        return search_evaluate_position(context, position, 0);
     }
 
     key = position_key(position);
@@ -1641,6 +1651,7 @@ static int search_position_with_variation(
             continue;
         }
 
+        search_update_nnue_state(context, position, &move, &undo, 0);
         search_push_position(context, position);
         if (context != 0) {
             context->line_moves[0] = move;
@@ -1920,6 +1931,9 @@ int search_iterative_with_state_and_limits(
     );
     initialize_lmr_reductions();
     search_set_limits(&context, limits);
+    if (context.nnue_states != 0) {
+        nnue_state_build(position, &context.nnue_states[0]);
+    }
     if (limits != 0) {
         search_set_position_history(
             &context,
@@ -1944,7 +1958,7 @@ int search_iterative_with_state_and_limits(
     }
 
     context.raw_evaluations++;
-    completed_score = evaluate_position(position);
+    completed_score = search_evaluate_position(&context, position, 0);
 
     for (depth = 1; depth <= maximum_depth; ++depth) {
         int iteration_start_ms = search_elapsed_ms(&context);

@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/chess/move.h"
 #include "src/chess/movegen.h"
 
 static const char THETA_NNUE_MAGIC[8] = {
@@ -893,18 +894,54 @@ static void sf_add_psq(
     int32_t *accumulator,
     int32_t *psqt
 ) {
+    int hidden;
+    int bucket;
+
+    if (network == 0 || index < 0 || index >= STOCKFISH_FEATURE_DIMENSIONS ||
+        accumulator == 0 || psqt == 0) {
+        return;
+    }
+
     const int16_t *weights = network->psq_weights.data() +
         index * STOCKFISH_HALF_DIMENSIONS;
     const int32_t *psqt_weights = network->psqt_weights.data() +
         index * STOCKFISH_BUCKETS;
-    int hidden;
-    int bucket;
 
     for (hidden = 0; hidden < STOCKFISH_HALF_DIMENSIONS; ++hidden) {
         accumulator[hidden] += weights[hidden];
     }
     for (bucket = 0; bucket < STOCKFISH_BUCKETS; ++bucket) {
         psqt[bucket] += psqt_weights[bucket];
+    }
+}
+
+static void sf_adjust_psq(
+    const StockfishModel *network,
+    int index,
+    int sign,
+    int32_t *accumulator,
+    int32_t *psqt
+) {
+    const int16_t *weights;
+    const int32_t *psqt_weights;
+    int hidden;
+    int bucket;
+
+    if (network == 0 || index < 0 || index >= STOCKFISH_FEATURE_DIMENSIONS ||
+        (sign != 1 && sign != -1) || accumulator == 0 || psqt == 0) {
+        return;
+    }
+
+    weights = network->psq_weights.data() +
+        index * STOCKFISH_HALF_DIMENSIONS;
+    psqt_weights = network->psqt_weights.data() +
+        index * STOCKFISH_BUCKETS;
+
+    for (hidden = 0; hidden < STOCKFISH_HALF_DIMENSIONS; ++hidden) {
+        accumulator[hidden] += sign * weights[hidden];
+    }
+    for (bucket = 0; bucket < STOCKFISH_BUCKETS; ++bucket) {
+        psqt[bucket] += sign * psqt_weights[bucket];
     }
 }
 
@@ -1189,7 +1226,11 @@ static int sf_propagate(
     return (int)(((int64_t)fc2[0] * 600 * 16) / (128 * 64 * 2)) / 16;
 }
 
-static int stockfish_evaluate(const Position *position, int *score) {
+static int stockfish_evaluate(
+    const Position *position,
+    const NnueState *state,
+    int *score
+) {
     SfPositionData data;
     int32_t accumulators[2][STOCKFISH_HALF_DIMENSIONS];
     int32_t psqt[2][STOCKFISH_BUCKETS];
@@ -1213,31 +1254,46 @@ static int stockfish_evaluate(const Position *position, int *score) {
     }
 
     for (perspective = 0; perspective < 2; ++perspective) {
-        for (square = 0; square < STOCKFISH_HALF_DIMENSIONS; ++square) {
-            accumulators[perspective][square] = model.stockfish.biases[square];
-        }
-        for (square = 0; square < STOCKFISH_BUCKETS; ++square) {
-            psqt[perspective][square] = 0;
-        }
-
-        for (square = 0; square < 64; ++square) {
-            int code = data.pieces[square];
-            int index;
-            if (code == 0) {
-                continue;
-            }
-            index = sf_psq_index(
-                perspective,
-                square,
-                code,
-                data.kings[perspective]
-            );
-            sf_add_psq(
-                &model.stockfish,
-                index,
+        if (state != 0 && state->valid &&
+            state->generation == model.generation) {
+            memcpy(
                 accumulators[perspective],
-                psqt[perspective]
+                state->psq_accumulators[perspective],
+                sizeof(accumulators[perspective])
             );
+            memcpy(
+                psqt[perspective],
+                state->psqt_accumulators[perspective],
+                sizeof(psqt[perspective])
+            );
+        } else {
+            for (square = 0; square < STOCKFISH_HALF_DIMENSIONS; ++square) {
+                accumulators[perspective][square] =
+                    model.stockfish.biases[square];
+            }
+            for (square = 0; square < STOCKFISH_BUCKETS; ++square) {
+                psqt[perspective][square] = 0;
+            }
+
+            for (square = 0; square < 64; ++square) {
+                int code = data.pieces[square];
+                int index;
+                if (code == 0) {
+                    continue;
+                }
+                index = sf_psq_index(
+                    perspective,
+                    square,
+                    code,
+                    data.kings[perspective]
+                );
+                sf_add_psq(
+                    &model.stockfish,
+                    index,
+                    accumulators[perspective],
+                    psqt[perspective]
+                );
+            }
         }
         sf_add_threats(
             &model.stockfish,
@@ -1284,6 +1340,248 @@ static int stockfish_evaluate(const Position *position, int *score) {
     value = sf_clamp(value, -30000, 30000);
     *score = (int)((int64_t)value * 100 / 208);
     return 1;
+}
+
+static void sf_build_psq_state_perspective(
+    const SfPositionData *data,
+    int perspective,
+    NnueState *state
+) {
+    int square;
+
+    if (data == 0 || state == 0 || perspective < 0 || perspective >= 2) {
+        return;
+    }
+
+    for (square = 0; square < STOCKFISH_HALF_DIMENSIONS; ++square) {
+        state->psq_accumulators[perspective][square] =
+            model.stockfish.biases[square];
+    }
+    for (square = 0; square < STOCKFISH_BUCKETS; ++square) {
+        state->psqt_accumulators[perspective][square] = 0;
+    }
+    for (square = 0; square < 64; ++square) {
+        int code = data->pieces[square];
+        int index;
+
+        if (code == 0) {
+            continue;
+        }
+        index = sf_psq_index(
+            perspective,
+            square,
+            code,
+            data->kings[perspective]
+        );
+        sf_add_psq(
+            &model.stockfish,
+            index,
+            state->psq_accumulators[perspective],
+            state->psqt_accumulators[perspective]
+        );
+    }
+}
+
+static void sf_build_psq_state(
+    const SfPositionData *data,
+    NnueState *state
+) {
+    int perspective;
+
+    if (data == 0 || state == 0) {
+        return;
+    }
+
+    for (perspective = 0; perspective < 2; ++perspective) {
+        sf_build_psq_state_perspective(data, perspective, state);
+    }
+    state->generation = model.generation;
+    state->valid = 1;
+}
+
+static void sf_adjust_psq_state_piece(
+    const SfPositionData *data,
+    int perspective,
+    int theta_square,
+    Piece piece,
+    int sign,
+    NnueState *state
+) {
+    int square;
+    int code;
+    int index;
+
+    if (data == 0 || state == 0 || !is_valid_square(theta_square)) {
+        return;
+    }
+    code = sf_piece_code(piece);
+    if (code == 0) {
+        return;
+    }
+    square = theta_square ^ 56;
+    index = sf_psq_index(
+        perspective,
+        square,
+        code,
+        data->kings[perspective]
+    );
+    sf_adjust_psq(
+        &model.stockfish,
+        index,
+        sign,
+        state->psq_accumulators[perspective],
+        state->psqt_accumulators[perspective]
+    );
+}
+
+static void sf_update_psq_state(
+    const Position *position,
+    const Move *move,
+    const UndoState *undo,
+    const NnueState *parent,
+    NnueState *child
+) {
+    SfPositionData data;
+    int perspective;
+    Piece placed_piece;
+    Piece rook;
+    int rook_from;
+    int rook_to;
+    int moving_king_perspective;
+
+    if (position == 0 || move == 0 || undo == 0 || parent == 0 ||
+        child == 0) {
+        return;
+    }
+
+    build_sf_position(position, &data);
+    if (data.kings[COLOR_WHITE] < 0 || data.kings[COLOR_BLACK] < 0) {
+        child->valid = 0;
+        return;
+    }
+
+    if (!parent->valid || parent->generation != model.generation) {
+        sf_build_psq_state(&data, child);
+        return;
+    }
+
+    *child = *parent;
+    child->generation = model.generation;
+    child->valid = 1;
+    placed_piece = (move->flags & MOVE_FLAG_PROMOTION) != 0
+        ? move->promotion
+        : undo->moved_piece;
+    moving_king_perspective = piece_type(undo->moved_piece) ==
+        PIECE_TYPE_KING ? piece_color(undo->moved_piece) : -1;
+
+    rook_from = NO_SQUARE;
+    rook_to = NO_SQUARE;
+    rook = PIECE_NONE;
+    if ((move->flags & MOVE_FLAG_CASTLE_KINGSIDE) != 0 ||
+        (move->flags & MOVE_FLAG_CASTLE_QUEENSIDE) != 0) {
+        int row = square_row(move->from);
+        int kingside = (move->flags & MOVE_FLAG_CASTLE_KINGSIDE) != 0;
+
+        rook_from = make_square(row, kingside ? 7 : 0);
+        rook_to = make_square(row, kingside ? 5 : 3);
+        rook = piece_color(undo->moved_piece) == COLOR_WHITE
+            ? PIECE_WHITE_ROOK
+            : PIECE_BLACK_ROOK;
+    }
+
+    for (perspective = 0; perspective < 2; ++perspective) {
+        if (perspective == moving_king_perspective) {
+            sf_build_psq_state_perspective(&data, perspective, child);
+            continue;
+        }
+
+        sf_adjust_psq_state_piece(
+            &data,
+            perspective,
+            move->from,
+            undo->moved_piece,
+            -1,
+            child
+        );
+        if (undo->captured_piece != PIECE_NONE) {
+            sf_adjust_psq_state_piece(
+                &data,
+                perspective,
+                undo->captured_square,
+                undo->captured_piece,
+                -1,
+                child
+            );
+        }
+        sf_adjust_psq_state_piece(
+            &data,
+            perspective,
+            move->to,
+            placed_piece,
+            1,
+            child
+        );
+        if (rook != PIECE_NONE) {
+            sf_adjust_psq_state_piece(
+                &data,
+                perspective,
+                rook_from,
+                rook,
+                -1,
+                child
+            );
+            sf_adjust_psq_state_piece(
+                &data,
+                perspective,
+                rook_to,
+                rook,
+                1,
+                child
+            );
+        }
+    }
+}
+
+int nnue_state_build(const Position *position, NnueState *state) {
+    SfPositionData data;
+
+    if (!nnue_is_enabled() || model.kind != NNUE_KIND_STOCKFISH ||
+        position == 0 || state == 0) {
+        return 0;
+    }
+    build_sf_position(position, &data);
+    if (data.kings[COLOR_WHITE] < 0 || data.kings[COLOR_BLACK] < 0) {
+        state->valid = 0;
+        return 0;
+    }
+    sf_build_psq_state(&data, state);
+    return 1;
+}
+
+int nnue_state_update(
+    const Position *position,
+    const Move *move,
+    const UndoState *undo,
+    const NnueState *parent,
+    NnueState *child
+) {
+    if (!nnue_is_enabled() || model.kind != NNUE_KIND_STOCKFISH) {
+        return 0;
+    }
+    sf_update_psq_state(position, move, undo, parent, child);
+    return child != 0 && child->valid;
+}
+
+int nnue_evaluate_with_state(
+    const Position *position,
+    const NnueState *state,
+    int *score
+) {
+    if (!nnue_is_enabled() || model.kind != NNUE_KIND_STOCKFISH ||
+        state == 0 || !state->valid || state->generation != model.generation) {
+        return 0;
+    }
+    return stockfish_evaluate(position, state, score);
 }
 
 int nnue_load(const char *path) {
@@ -1337,7 +1635,7 @@ int nnue_evaluate(const Position *position, int *score) {
         return theta_evaluate(position, score);
     }
     if (model.kind == NNUE_KIND_STOCKFISH) {
-        return stockfish_evaluate(position, score);
+        return stockfish_evaluate(position, 0, score);
     }
     return 0;
 }

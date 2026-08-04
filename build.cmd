@@ -138,6 +138,8 @@ echo [BUILD] nnue_test
     src\chess\board.cpp ^
     src\chess\position.cpp ^
     src\chess\fen.cpp ^
+    src\chess\move.cpp ^
+    src\chess\movegen.cpp ^
     src\chess\zobrist.cpp ^
     src\eval\nnue.cpp ^
     -o build\nnue_test.exe
