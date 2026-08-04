@@ -34,5 +34,6 @@ are a good sign, but they are not proof of playing strength by themselves.
 | 4 | 5 | 0 | e1f2 | 6,525 |
 | **Total** | | | | **32,302** |
 
-Elo (based on cutechess with stockfish-18): ~2544
+Elo (based on cutechess with stockfish-18): ~2820 (using NNUE)
+Elo without NNUE: ~2544
 Nodes per second: ~140k on the current Windows native build
