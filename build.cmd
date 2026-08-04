@@ -118,6 +118,7 @@ echo [BUILD] evaluation_test
     src\chess\zobrist.cpp ^
     src\eval\eval_params.cpp ^
     src\eval\evaluation.cpp ^
+    src\eval\nnue.cpp ^
     src\eval\king_safety.cpp ^
     src\eval\mobility.cpp ^
     src\eval\pawn_structure.cpp ^
@@ -129,6 +130,21 @@ if errorlevel 1 exit /b 1
 
 echo [TEST]  evaluation_test
 build\evaluation_test.exe
+if errorlevel 1 exit /b 1
+
+echo [BUILD] nnue_test
+%CXX% %CXXFLAGS% ^
+    tests\nnue_test.cpp ^
+    src\chess\board.cpp ^
+    src\chess\position.cpp ^
+    src\chess\fen.cpp ^
+    src\chess\zobrist.cpp ^
+    src\eval\nnue.cpp ^
+    -o build\nnue_test.exe
+if errorlevel 1 exit /b 1
+
+echo [TEST]  nnue_test
+build\nnue_test.exe
 if errorlevel 1 exit /b 1
 
 echo [BUILD] transposition_table_test
@@ -181,6 +197,7 @@ echo [BUILD] search_test
     src\engine\transposition_table.cpp ^
     src\eval\eval_params.cpp ^
     src\eval\evaluation.cpp ^
+    src\eval\nnue.cpp ^
     src\eval\king_safety.cpp ^
     src\eval\mobility.cpp ^
     src\eval\pawn_structure.cpp ^

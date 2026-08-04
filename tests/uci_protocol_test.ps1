@@ -76,6 +76,12 @@ try {
     if (-not ($uci.Seen | Where-Object { $_ -eq "option name Allow Draws type check default true" })) {
         throw "UCI Allow Draws option was not reported"
     }
+    if (-not ($uci.Seen | Where-Object { $_ -eq "option name NNUEFile type string default" })) {
+        throw "UCI NNUEFile option was not reported"
+    }
+    if (-not ($uci.Seen | Where-Object { $_ -eq "option name Use NNUE type check default false" })) {
+        throw "UCI Use NNUE option was not reported"
+    }
     Send-Command "setoption name Hash value 4"
     Send-Command "setoption name Clear Hash"
     Send-Command "isready"

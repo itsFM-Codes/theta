@@ -1,4 +1,5 @@
 #include "evaluation.h"
+#include "nnue.h"
 #include "king_safety.h"
 #include "mobility.h"
 #include "pawn_structure.h"
@@ -13,6 +14,7 @@
 typedef struct EvaluationCacheEntry {
     uint64_t key;
     unsigned int params_generation;
+    unsigned int nnue_generation;
     int score;
     int valid;
 } EvaluationCacheEntry;
@@ -66,9 +68,25 @@ int evaluate_position_with_trace(
     uint64_t black_attacks;
     const EvalParams *params = current_eval_params();
     uint64_t pieces;
+    int nnue_score;
 
     if (position == 0) {
         return 0;
+    }
+
+    if (nnue_evaluate(position, &nnue_score)) {
+        if (trace != 0) {
+            trace->material_and_piece_square = nnue_score;
+            trace->mobility = 0;
+            trace->pawn_structure = 0;
+            trace->king_safety = 0;
+            trace->piece_activity = 0;
+            trace->threats = 0;
+            trace->space = 0;
+            trace->tempo = 0;
+            trace->total = nnue_score;
+        }
+        return nnue_score;
     }
 
     pieces = position->occupied;
@@ -249,21 +267,25 @@ int evaluate_position(const Position *position) {
     uint64_t key;
     EvaluationCacheEntry *entry;
     int score;
+    unsigned int current_nnue_generation;
 
     if (position == 0) {
         return 0;
     }
 
     key = position_key(position);
+    current_nnue_generation = nnue_generation();
     entry = &evaluation_cache[key & (EVALUATION_CACHE_SIZE - 1)];
     if (entry->valid && entry->key == key &&
-        entry->params_generation == eval_params_generation()) {
+        entry->params_generation == eval_params_generation() &&
+        entry->nnue_generation == current_nnue_generation) {
         return entry->score;
     }
 
     score = evaluate_position_with_trace(position, 0);
     entry->key = key;
     entry->params_generation = eval_params_generation();
+    entry->nnue_generation = current_nnue_generation;
     entry->score = score;
     entry->valid = 1;
     return score;

@@ -20,6 +20,7 @@
 #include "src/chess/zobrist.h"
 #include "src/config/config.h"
 #include "src/engine/search.h"
+#include "src/eval/nnue.h"
 
 #define UCI_LINE_SIZE 4096
 #define UCI_FEN_SIZE 256
@@ -548,6 +549,8 @@ int run_uci(void) {
 #endif
     std::atomic<bool> stop_requested(false);
     int allow_draws = g_config.allow_draws;
+    int use_nnue = 0;
+    std::string nnue_path;
     char line[UCI_LINE_SIZE];
 
     if (!initialize_search_shared_state(&shared_state)) {
@@ -599,6 +602,8 @@ int run_uci(void) {
             printf("option name Clear Hash type button\n");
             printf("option name Allow Draws type check default %s\n",
                    g_config.allow_draws ? "true" : "false");
+            printf("option name NNUEFile type string default\n");
+            printf("option name Use NNUE type check default false\n");
             printf("uciok\n");
             fflush(stdout);
         } else if (strcmp(arguments, "isready") == 0) {
@@ -635,6 +640,41 @@ int run_uci(void) {
             if (parse_boolean(arguments + 33, &value)) {
                 allow_draws = value;
                 clear_search_shared_state(&shared_state);
+            }
+        } else if (strncmp(
+                arguments,
+                "setoption name NNUEFile value ",
+                30
+            ) == 0) {
+            const char *path = arguments + 30;
+
+            stop_search();
+            if (*path == '\0') {
+                nnue_unload();
+                nnue_path.clear();
+            } else if (nnue_load(path)) {
+                nnue_path = path;
+                nnue_set_enabled(use_nnue);
+            } else {
+                fprintf(stderr, "Error: Could not load Theta or Stockfish NNUE file\n");
+            }
+        } else if (strncmp(
+                arguments,
+                "setoption name Use NNUE value ",
+                30
+            ) == 0) {
+            int value;
+
+            stop_search();
+            if (parse_boolean(arguments + 30, &value)) {
+                if (value && !nnue_is_loaded() && !nnue_path.empty()) {
+                    if (!nnue_load(nnue_path.c_str())) {
+                        fprintf(stderr, "Error: Could not load Theta or Stockfish NNUE file\n");
+                        value = 0;
+                    }
+                }
+                use_nnue = value;
+                nnue_set_enabled(value);
             }
         } else if (strncmp(arguments, "position ", 9) == 0) {
             stop_search();
@@ -677,6 +717,7 @@ int run_uci(void) {
             stop_search();
         } else if (strcmp(arguments, "quit") == 0) {
             stop_search();
+            nnue_unload();
             destroy_search_shared_state(&shared_state);
             return 1;
         }
