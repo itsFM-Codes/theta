@@ -1,9 +1,13 @@
 #include "search_internal.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <new>
 #include <string.h>
 
 #include "src/chess/movegen.h"
 #include "src/chess/zobrist.h"
+#include "src/eval/evaluation.h"
 
 static void clear_move(Move *move) {
     move->from = NO_SQUARE;
@@ -59,6 +63,14 @@ void initialize_search_context(
     context->selective_depth = 0;
     context->position_key_count = 0;
     context->draw_score = 0;
+    context->nnue_states = new (std::nothrow) NnueState[MAX_SEARCH_PLY];
+    if (context->nnue_states != 0) {
+        memset(
+            context->nnue_states,
+            0,
+            sizeof(NnueState) * MAX_SEARCH_PLY
+        );
+    }
     memset(context->static_evaluation_valid, 0,
            sizeof(context->static_evaluation_valid));
     context->shared_state = shared_state;
@@ -89,7 +101,10 @@ void initialize_search_context(
 
 void destroy_search_context(SearchContext *context) {
     // Context borrows shared state.
-    (void)context;
+    if (context != 0) {
+        delete[] context->nnue_states;
+        context->nnue_states = 0;
+    }
 }
 
 int search_has_stopped(SearchContext *context) {
@@ -368,6 +383,75 @@ int search_is_draw(const SearchContext *context, const Position *position) {
 
 int search_draw_score(const SearchContext *context) {
     return context == 0 ? 0 : context->draw_score;
+}
+
+int search_evaluate_position(
+    SearchContext *context,
+    const Position *position,
+    int ply
+) {
+    int score;
+
+    if (context != 0 && context->nnue_states != 0 &&
+        ply >= 0 && ply < MAX_SEARCH_PLY &&
+        nnue_evaluate_with_state(
+            position,
+            &context->nnue_states[ply],
+            &score
+        )) {
+#ifdef THETA_VERIFY_NNUE_STATE
+        {
+            int full_score;
+            if (!nnue_evaluate(position, &full_score) ||
+                full_score != score) {
+                fprintf(stderr, "NNUE state mismatch at ply %d: %d != %d\n",
+                        ply, score, full_score);
+                abort();
+            }
+        }
+#endif
+        return score;
+    }
+    return evaluate_position(position);
+}
+
+int search_update_nnue_state(
+    SearchContext *context,
+    const Position *position,
+    const Move *move,
+    const UndoState *undo,
+    int parent_ply
+) {
+    int updated;
+
+    if (context == 0 || context->nnue_states == 0 ||
+        parent_ply < 0 || parent_ply + 1 >= MAX_SEARCH_PLY) {
+        return 0;
+    }
+    updated = nnue_state_update(
+        position,
+        move,
+        undo,
+        &context->nnue_states[parent_ply],
+        &context->nnue_states[parent_ply + 1]
+    );
+    if (!updated) {
+        context->nnue_states[parent_ply + 1].valid = 0;
+    }
+    return updated;
+}
+
+void search_copy_nnue_state(
+    SearchContext *context,
+    int parent_ply,
+    int child_ply
+) {
+    if (context == 0 || context->nnue_states == 0 ||
+        parent_ply < 0 || parent_ply >= MAX_SEARCH_PLY ||
+        child_ply < 0 || child_ply >= MAX_SEARCH_PLY) {
+        return;
+    }
+    context->nnue_states[child_ply] = context->nnue_states[parent_ply];
 }
 
 int position_has_insufficient_material(const Position *position) {

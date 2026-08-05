@@ -34,5 +34,26 @@ are a good sign, but they are not proof of playing strength by themselves.
 | 4 | 5 | 0 | e1f2 | 6,525 |
 | **Total** | | | | **32,302** |
 
-Elo (based on cutechess with stockfish-18): ~2544
-Nodes per second: ~140k on the current Windows native build
+## Current strength measurements
+
+Measured 2026-08-05 with Cute Chess, 40 games, paired colors, sequential
+openings, `2+0.02`, 16 MB hash, one thread, and Stockfish 18 limited to Elo
+2800:
+
+| Mode | Score | Elo difference | Estimated performance |
+| --- | ---: | ---: | ---: |
+| NNUE enabled | 13-14-13 | -8.7 +/- 90.3 | ~2791 |
+| NNUE disabled | 3-33-4 | -338.0 +/- 175.3 | ~2462 |
+
+These are provisional 40-game estimates; the confidence intervals are wide.
+
+## Current NPS measurements
+
+The deterministic `bench` command above runs with NNUE disabled and measured
+169,120 NPS on the current Windows native build. For a directly comparable
+fixed-time measurement, three 1-second start-position searches produced:
+
+| Mode | Runs | Average NPS |
+| --- | --- | ---: |
+| NNUE disabled | 138,567; 147,805; 141,450 | ~142.6k |
+| NNUE enabled | 43,864; 44,127; 47,670 | ~45.2k |
