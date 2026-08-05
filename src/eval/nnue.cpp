@@ -841,7 +841,7 @@ static int sf_threat_index(
     map = tables->map[attacker_type - 1][attacked_type - 1];
     semi_excluded = attacker_type == attacked_type &&
         ((attacker ^ attacked) == 8 || attacker_type != PIECE_TYPE_PAWN);
-    if (map < 0 || (from_oriented >= to_oriented && semi_excluded)) {
+    if (map < 0 || (from_oriented < to_oriented && semi_excluded)) {
         return -1;
     }
 
