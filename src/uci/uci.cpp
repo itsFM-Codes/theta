@@ -324,6 +324,29 @@ static int parse_boolean(const char *text, int *value) {
     return 0;
 }
 
+static int set_search_option_value(
+    const char *arguments,
+    const char *prefix,
+    int minimum,
+    int maximum,
+    int *target
+) {
+    size_t prefix_length;
+    int value;
+
+    if (arguments == 0 || prefix == 0 || target == 0 ||
+        strncmp(arguments, prefix, strlen(prefix)) != 0) {
+        return 0;
+    }
+
+    prefix_length = strlen(prefix);
+    if (parse_non_negative(arguments + prefix_length, &value) &&
+        value >= minimum && value <= maximum) {
+        *target = value;
+    }
+    return 1;
+}
+
 static void print_search_info(
     int depth,
     int score,
@@ -604,6 +627,14 @@ int run_uci(void) {
                    g_config.allow_draws ? "true" : "false");
             printf("option name NNUEFile type string default\n");
             printf("option name Use NNUE type check default false\n");
+            printf("option name Search LMR Depth Start type spin default %d min 2 max 6\n",
+                   g_config.search_lmr_depth_start);
+            printf("option name Search LMR Move Start type spin default %d min 2 max 8\n",
+                   g_config.search_lmr_move_start);
+            printf("option name Search Null Move Base type spin default %d min 1 max 8\n",
+                   g_config.search_null_move_base);
+            printf("option name Search Static Futility Margin type spin default %d min 40 max 200\n",
+                   g_config.search_static_futility_margin);
             printf("uciok\n");
             fflush(stdout);
         } else if (strcmp(arguments, "isready") == 0) {
@@ -627,6 +658,33 @@ int run_uci(void) {
                 }
             }
         } else if (strcmp(arguments, "setoption name Clear Hash") == 0) {
+            stop_search();
+            clear_search_shared_state(&shared_state);
+        } else if (set_search_option_value(
+                arguments,
+                "setoption name Search LMR Depth Start value ",
+                2,
+                6,
+                &g_config.search_lmr_depth_start
+            ) || set_search_option_value(
+                arguments,
+                "setoption name Search LMR Move Start value ",
+                2,
+                8,
+                &g_config.search_lmr_move_start
+            ) || set_search_option_value(
+                arguments,
+                "setoption name Search Null Move Base value ",
+                1,
+                8,
+                &g_config.search_null_move_base
+            ) || set_search_option_value(
+                arguments,
+                "setoption name Search Static Futility Margin value ",
+                40,
+                200,
+                &g_config.search_static_futility_margin
+            )) {
             stop_search();
             clear_search_shared_state(&shared_state);
         } else if (strncmp(

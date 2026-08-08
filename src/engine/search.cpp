@@ -6,6 +6,7 @@
 
 #include "src/chess/movegen.h"
 #include "src/chess/zobrist.h"
+#include "src/config/config.h"
 #include "src/eval/evaluation.h"
 
 #define REVERSE_FUTILITY_MARGIN 120
@@ -33,7 +34,8 @@ static void initialize_lmr_reductions(void) {
         for (move_index = 0; move_index < MAX_MOVES; ++move_index) {
             int reduction = 0;
 
-            if (depth >= 3 && move_index >= 3) {
+            if (depth >= g_config.search_lmr_depth_start &&
+                move_index >= g_config.search_lmr_move_start) {
                 reduction = 1;
                 if (depth >= 5 && move_index >= 6) {
                     reduction++;
@@ -531,7 +533,7 @@ static int quiet_move_attacks_valuable_piece(
 }
 
 static int static_futility_margin(int depth, int improving) {
-    int margin = STATIC_FUTILITY_MARGIN * depth;
+    int margin = g_config.search_static_futility_margin * depth;
 
     return improving ? margin + 45 : margin;
 }
@@ -564,7 +566,7 @@ static int late_move_pruning_threshold(
 }
 
 static int null_move_reduction(int depth, int static_score, int beta) {
-    int reduction = 4 + depth / 4;
+    int reduction = g_config.search_null_move_base + depth / 4;
     int margin = static_score - beta;
 
     if (margin > 200) {

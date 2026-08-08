@@ -197,6 +197,7 @@ echo [BUILD] search_test
     src\engine\quiescence.cpp ^
     src\engine\static_exchange.cpp ^
     src\engine\transposition_table.cpp ^
+    src\config\config.cpp ^
     src\eval\eval_params.cpp ^
     src\eval\evaluation.cpp ^
     src\eval\nnue.cpp ^
