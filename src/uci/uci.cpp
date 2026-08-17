@@ -20,6 +20,7 @@
 #include "src/chess/zobrist.h"
 #include "src/config/config.h"
 #include "src/engine/search.h"
+#include "src/eval/nnue.h"
 
 #define UCI_LINE_SIZE 4096
 #define UCI_FEN_SIZE 256
@@ -323,6 +324,29 @@ static int parse_boolean(const char *text, int *value) {
     return 0;
 }
 
+static int set_search_option_value(
+    const char *arguments,
+    const char *prefix,
+    int minimum,
+    int maximum,
+    int *target
+) {
+    size_t prefix_length;
+    int value;
+
+    if (arguments == 0 || prefix == 0 || target == 0 ||
+        strncmp(arguments, prefix, strlen(prefix)) != 0) {
+        return 0;
+    }
+
+    prefix_length = strlen(prefix);
+    if (parse_non_negative(arguments + prefix_length, &value) &&
+        value >= minimum && value <= maximum) {
+        *target = value;
+    }
+    return 1;
+}
+
 static void print_search_info(
     int depth,
     int score,
@@ -548,6 +572,8 @@ int run_uci(void) {
 #endif
     std::atomic<bool> stop_requested(false);
     int allow_draws = g_config.allow_draws;
+    int use_nnue = 0;
+    std::string nnue_path;
     char line[UCI_LINE_SIZE];
 
     if (!initialize_search_shared_state(&shared_state)) {
@@ -599,6 +625,16 @@ int run_uci(void) {
             printf("option name Clear Hash type button\n");
             printf("option name Allow Draws type check default %s\n",
                    g_config.allow_draws ? "true" : "false");
+            printf("option name NNUEFile type string default\n");
+            printf("option name Use NNUE type check default false\n");
+            printf("option name Search LMR Depth Start type spin default %d min 2 max 6\n",
+                   g_config.search_lmr_depth_start);
+            printf("option name Search LMR Move Start type spin default %d min 2 max 8\n",
+                   g_config.search_lmr_move_start);
+            printf("option name Search Null Move Base type spin default %d min 1 max 8\n",
+                   g_config.search_null_move_base);
+            printf("option name Search Static Futility Margin type spin default %d min 40 max 200\n",
+                   g_config.search_static_futility_margin);
             printf("uciok\n");
             fflush(stdout);
         } else if (strcmp(arguments, "isready") == 0) {
@@ -624,6 +660,33 @@ int run_uci(void) {
         } else if (strcmp(arguments, "setoption name Clear Hash") == 0) {
             stop_search();
             clear_search_shared_state(&shared_state);
+        } else if (set_search_option_value(
+                arguments,
+                "setoption name Search LMR Depth Start value ",
+                2,
+                6,
+                &g_config.search_lmr_depth_start
+            ) || set_search_option_value(
+                arguments,
+                "setoption name Search LMR Move Start value ",
+                2,
+                8,
+                &g_config.search_lmr_move_start
+            ) || set_search_option_value(
+                arguments,
+                "setoption name Search Null Move Base value ",
+                1,
+                8,
+                &g_config.search_null_move_base
+            ) || set_search_option_value(
+                arguments,
+                "setoption name Search Static Futility Margin value ",
+                40,
+                200,
+                &g_config.search_static_futility_margin
+            )) {
+            stop_search();
+            clear_search_shared_state(&shared_state);
         } else if (strncmp(
                 arguments,
                 "setoption name Allow Draws value ",
@@ -635,6 +698,41 @@ int run_uci(void) {
             if (parse_boolean(arguments + 33, &value)) {
                 allow_draws = value;
                 clear_search_shared_state(&shared_state);
+            }
+        } else if (strncmp(
+                arguments,
+                "setoption name NNUEFile value ",
+                30
+            ) == 0) {
+            const char *path = arguments + 30;
+
+            stop_search();
+            if (*path == '\0') {
+                nnue_unload();
+                nnue_path.clear();
+            } else if (nnue_load(path)) {
+                nnue_path = path;
+                nnue_set_enabled(use_nnue);
+            } else {
+                fprintf(stderr, "Error: Could not load Theta or Stockfish NNUE file\n");
+            }
+        } else if (strncmp(
+                arguments,
+                "setoption name Use NNUE value ",
+                30
+            ) == 0) {
+            int value;
+
+            stop_search();
+            if (parse_boolean(arguments + 30, &value)) {
+                if (value && !nnue_is_loaded() && !nnue_path.empty()) {
+                    if (!nnue_load(nnue_path.c_str())) {
+                        fprintf(stderr, "Error: Could not load Theta or Stockfish NNUE file\n");
+                        value = 0;
+                    }
+                }
+                use_nnue = value;
+                nnue_set_enabled(value);
             }
         } else if (strncmp(arguments, "position ", 9) == 0) {
             stop_search();
@@ -677,6 +775,7 @@ int run_uci(void) {
             stop_search();
         } else if (strcmp(arguments, "quit") == 0) {
             stop_search();
+            nnue_unload();
             destroy_search_shared_state(&shared_state);
             return 1;
         }

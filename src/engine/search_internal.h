@@ -6,6 +6,7 @@
 #include "search.h"
 #include "search_state.h"
 #include "transposition_table.h"
+#include "src/eval/nnue.h"
 
 #define MAX_KILLER_PLY 64
 #define MAX_SEARCH_PLY 128
@@ -57,6 +58,7 @@ typedef struct SearchContext {
     uint64_t position_keys[MAX_POSITION_HISTORY];
     int position_key_count;
     int draw_score;
+    NnueState *nnue_states;
     // Shared engine state; the rest is worker-local.
     SearchSharedState *shared_state;
     TranspositionTableStatistics transposition_statistics;
@@ -86,6 +88,23 @@ int search_push_position(SearchContext *context, const Position *position);
 void search_pop_position(SearchContext *context);
 int search_is_draw(const SearchContext *context, const Position *position);
 int search_draw_score(const SearchContext *context);
+int search_evaluate_position(
+    SearchContext *context,
+    const Position *position,
+    int ply
+);
+int search_update_nnue_state(
+    SearchContext *context,
+    const Position *position,
+    const Move *move,
+    const UndoState *undo,
+    int parent_ply
+);
+void search_copy_nnue_state(
+    SearchContext *context,
+    int parent_ply,
+    int child_ply
+);
 int position_has_insufficient_material(const Position *position);
 
 int position_is_in_check(const Position *position);

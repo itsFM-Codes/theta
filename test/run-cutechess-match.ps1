@@ -6,6 +6,10 @@ param(
     [int]$HashMb = 16,
     [int]$TimeMarginMs = 250,
     [string]$ThetaEngine = "",
+    [string]$ThetaNnueFile = "",
+    [string]$ThetaOptions = "",
+    [ValidateSet("true", "false")]
+    [string]$ThetaUseNnue = "false",
     [ValidateSet("true", "false")]
     [string]$ThetaAllowDraws = "true",
     [ValidateSet("sequential", "random")]
@@ -42,10 +46,27 @@ New-Item -ItemType Directory -Path $results -Force | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $pgn = Join-Path $results "theta-vs-stockfish-$stamp.pgn"
 $log = Join-Path $results "theta-vs-stockfish-$stamp.log"
+$thetaUciOptions = @()
+if ($ThetaNnueFile) {
+    $thetaUciOptions += "option.NNUEFile=$ThetaNnueFile"
+}
+if ($ThetaUseNnue -eq "true") {
+    $thetaUciOptions += "option.Use NNUE=true"
+}
+$providedThetaOptions = if ($ThetaOptions) {
+    $ThetaOptions -split ","
+} else {
+    @()
+}
+foreach ($thetaOption in $providedThetaOptions) {
+    if ($thetaOption -and $thetaOption.Contains("=")) {
+        $thetaUciOptions += "option.$thetaOption"
+    }
+}
 
 $arguments = @(
     "-engine", "name=Theta", "cmd=$theta", "dir=$root", "proto=uci", "restart=off",
-        "option.Allow Draws=$ThetaAllowDraws",
+        "option.Allow Draws=$ThetaAllowDraws" ) + $thetaUciOptions + @(
     "-engine", "name=Stockfish18-Limited", "cmd=$stockfish", "dir=$root", "proto=uci",
         "restart=off", "option.Threads=1", "option.Hash=$HashMb",
         "option.UCI_LimitStrength=true", "option.UCI_Elo=$StockfishElo",
@@ -60,7 +81,7 @@ $arguments = @(
 )
 
 "Cute Chess: $cutechess" | Tee-Object -FilePath $log
-"Settings: games=$Games tc=$TimeControl concurrency=$Concurrency hash=${HashMb}MB stockfishElo=$StockfishElo thetaAllowDraws=$ThetaAllowDraws openings=$OpeningOrder timemargin=${TimeMarginMs}ms" |
+"Settings: games=$Games tc=$TimeControl concurrency=$Concurrency hash=${HashMb}MB stockfishElo=$StockfishElo thetaUseNnue=$ThetaUseNnue thetaNnueFile=$ThetaNnueFile thetaOptions=$ThetaOptions thetaAllowDraws=$ThetaAllowDraws openings=$OpeningOrder timemargin=${TimeMarginMs}ms" |
     Tee-Object -FilePath $log -Append
 & $cutechess @arguments 2>&1 | Tee-Object -FilePath $log -Append
 if ($LASTEXITCODE -ne 0) {

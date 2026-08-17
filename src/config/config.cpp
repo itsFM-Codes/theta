@@ -9,7 +9,7 @@
 
 #include "src/eval/eval_params.h"
 
-EngineConfig g_config;
+EngineConfig g_config = {6, 1, 3, 3, 4, 105};
 
 typedef struct ConfigIntTarget {
     const char *key;
@@ -107,6 +107,10 @@ static int set_config_int_target(
 void set_default_config(EngineConfig *config) {
     config->max_depth = 6;
     config->allow_draws = 1;
+    config->search_lmr_depth_start = 3;
+    config->search_lmr_move_start = 3;
+    config->search_null_move_base = 4;
+    config->search_static_futility_margin = 105;
 }
 
 int load_config(const char *filename) {
@@ -179,6 +183,12 @@ int load_config(const char *filename) {
             {"eval_hanging_piece_divisor", &eval_params.hanging_piece_divisor, 1, 100},
             {"eval_safe_space_bonus", &eval_params.safe_space_bonus, 0, 20}
         };
+        ConfigIntTarget search_targets[] = {
+            {"search_lmr_depth_start", &g_config.search_lmr_depth_start, 2, 6},
+            {"search_lmr_move_start", &g_config.search_lmr_move_start, 2, 8},
+            {"search_null_move_base", &g_config.search_null_move_base, 1, 8},
+            {"search_static_futility_margin", &g_config.search_static_futility_margin, 40, 200}
+        };
 
         line_number++;
         comment = strpbrk(line, "#;");
@@ -222,6 +232,16 @@ int load_config(const char *filename) {
         if (set_config_int_target(
                 eval_targets,
                 (int)(sizeof(eval_targets) / sizeof(eval_targets[0])),
+                key,
+                number,
+                line_number
+        )) {
+            continue;
+        }
+
+        if (set_config_int_target(
+                search_targets,
+                (int)(sizeof(search_targets) / sizeof(search_targets[0])),
                 key,
                 number,
                 line_number

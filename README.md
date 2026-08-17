@@ -28,6 +28,7 @@ The engine is built around a classical chess-programming stack:
   killer moves, quiet history, countermoves, and continuation history
 - Classical evaluation terms for material, piece-square tables, mobility, king
   safety, pawn structure, passed pawns, threats, space, and piece activity
+- Optional Theta or Stockfish NNUE inference
 - Deterministic benchmarking, tactical checks, UCI protocol tests, and
   Cute Chess match scripts
 
@@ -85,6 +86,7 @@ Theta reports:
 - `Hash` option from `1` to `1024` MB
 - `Clear Hash` button
 - `Allow Draws` option
+- `NNUEFile` and `Use NNUE` options for Theta or Stockfish networks
 
 Supported search controls include depth, nodes, movetime, infinite search,
 `stop`, and clock-based limits such as `wtime`, `btime`, `winc`, `binc`, and
@@ -149,6 +151,16 @@ build\theta.exe texel build\tuning.txt 200 4.0 build\tuned_eval.conf
 ```
 
 The generated config fragment can be pasted into [config/config.conf](config/config.conf).
+
+Train a fresh NNUE model with [notebooks/train_theta_nnue.ipynb](notebooks/train_theta_nnue.ipynb).
+The notebook exports Theta's own binary format and can use Stockfish NNUE scores as labels.
+
+Theta can also load the current Stockfish network directly. The file is not stored in the repository.
+
+```text
+setoption name NNUEFile value local\stockfish\src\nn-ab28990d4ea3.nnue
+setoption name Use NNUE value true
+```
 
 ## Testing
 
