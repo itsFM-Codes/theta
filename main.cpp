@@ -351,7 +351,12 @@ static int print_evaluation_trace(const char *fen) {
     printf(
         "{\"materialPst\":%d,\"mobility\":%d,\"pawnStructure\":%d,"
         "\"kingSafety\":%d,\"pieceActivity\":%d,\"threats\":%d,"
-        "\"space\":%d,\"tempo\":%d,\"total\":%d}\n",
+        "\"space\":%d,\"tempo\":%d,\"advanced\":%d,"
+        "\"stockfish\":%d,\"stockfishPiece\":%d,"
+        "\"stockfishMobility\":%d,\"stockfishKing\":%d,"
+        "\"stockfishThreats\":%d,\"stockfishPassed\":%d,"
+        "\"stockfishSpace\":%d,"
+        "\"total\":%d}\n",
         trace.material_and_piece_square,
         trace.mobility,
         trace.pawn_structure,
@@ -360,6 +365,14 @@ static int print_evaluation_trace(const char *fen) {
         trace.threats,
         trace.space,
         trace.tempo,
+        trace.advanced,
+        trace.stockfish_classical,
+        trace.stockfish_piece,
+        trace.stockfish_mobility,
+        trace.stockfish_king,
+        trace.stockfish_threats,
+        trace.stockfish_passed,
+        trace.stockfish_space,
         trace.total
     );
     return 1;
@@ -564,6 +577,59 @@ static int run_selfplay_dataset(
     return 1;
 }
 
+static int run_random_dataset(
+    int games,
+    int max_plies,
+    const char *output_path
+) {
+    std::ofstream output(output_path);
+    int game;
+
+    if (!output.is_open()) {
+        fprintf(stderr, "Error: Could not write %s\n", output_path);
+        return 0;
+    }
+
+    for (game = 0; game < games; ++game) {
+        Position position;
+        uint64_t seed = UINT64_C(0x9e3779b97f4a7c15) ^
+                        (uint64_t)(game + 1) * UINT64_C(0xbf58476d1ce4e5b9);
+        int ply;
+
+        set_starting_position(&position);
+        for (ply = 0; ply < max_plies; ++ply) {
+            MoveList moves;
+            Move move;
+            UndoState undo;
+            char fen[128];
+
+            generate_legal_moves(&position, &moves);
+            if (moves.count <= 0 ||
+                position.halfmove_clock >= 100 ||
+                position_has_insufficient_material(&position)) {
+                break;
+            }
+            if (!position_to_fen(&position, fen, sizeof(fen))) {
+                fprintf(stderr, "Error: Could not write FEN\n");
+                return 0;
+            }
+            output << "0.5 " << fen << "\n";
+
+            move = moves.moves[
+                next_random_value(&seed) % (uint64_t)moves.count
+            ];
+            if (!make_move(&position, move, &undo)) {
+                fprintf(stderr, "Error: Random dataset move failed\n");
+                return 0;
+            }
+        }
+    }
+
+    std::cout << "random dataset " << output_path << " games " << games
+              << " plies " << max_plies << "\n";
+    return 1;
+}
+
 static int parse_depth(const char *text, int *depth) {
     char *end;
     long value;
@@ -644,8 +710,14 @@ static int parse_positive_double(const char *text, double *value) {
 int main(int argc, char **argv) {
     int depth;
     int time_limit_ms;
+    const char *config_override;
 
-    if (!load_config(CONFIG_FILE)) {
+    config_override = getenv("THETA_CONFIG_FILE");
+    if (!load_config(
+            config_override != 0 && *config_override != '\0'
+                ? config_override
+                : CONFIG_FILE
+        )) {
         return EXIT_FAILURE;
     }
 
@@ -697,6 +769,48 @@ int main(int argc, char **argv) {
         ) ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
+    if (argc == 6 && strcmp(argv[1], "detailedtexel") == 0) {
+        int iterations;
+        double learning_rate;
+
+        if (!parse_positive_int(argv[3], 1, 100000, &iterations) ||
+            !parse_positive_double(argv[4], &learning_rate)) {
+            fprintf(stderr, "Error: Invalid detailed Texel arguments\n");
+            return EXIT_FAILURE;
+        }
+
+        return run_detailed_texel_tuning(
+            argv[2],
+            iterations,
+            learning_rate,
+            argv[5]
+        ) ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (argc == 6 && strcmp(argv[1], "phasetexel") == 0) {
+        int iterations;
+        double learning_rate;
+
+        if (!parse_positive_int(argv[3], 1, 100000, &iterations) ||
+            !parse_positive_double(argv[4], &learning_rate)) {
+            fprintf(stderr, "Error: Invalid phase Texel arguments\n");
+            return EXIT_FAILURE;
+        }
+
+        return run_phase_texel_tuning(
+            argv[2],
+            iterations,
+            learning_rate,
+            argv[5]
+        ) ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+
+    if (argc == 3 && strcmp(argv[1], "phaseloss") == 0) {
+        return print_phase_texel_loss(argv[2])
+            ? EXIT_SUCCESS
+            : EXIT_FAILURE;
+    }
+
     if (argc == 6 && strcmp(argv[1], "selfplaydata") == 0) {
         int games;
         int plies;
@@ -709,6 +823,21 @@ int main(int argc, char **argv) {
         }
 
         return run_selfplay_dataset(games, depth, plies, argv[5])
+            ? EXIT_SUCCESS
+            : EXIT_FAILURE;
+    }
+
+    if (argc == 5 && strcmp(argv[1], "randomdata") == 0) {
+        int games;
+        int plies;
+
+        if (!parse_positive_int(argv[2], 1, 100000, &games) ||
+            !parse_positive_int(argv[3], 1, 1000, &plies)) {
+            fprintf(stderr, "Error: Invalid random data arguments\n");
+            return EXIT_FAILURE;
+        }
+
+        return run_random_dataset(games, plies, argv[4])
             ? EXIT_SUCCESS
             : EXIT_FAILURE;
     }

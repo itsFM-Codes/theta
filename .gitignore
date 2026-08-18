@@ -9,3 +9,7 @@ test/results/
 
 # Local references
 local/
+
+# Python cache
+*/__pycache__/
+__pycache__/

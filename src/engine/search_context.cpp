@@ -63,6 +63,8 @@ void initialize_search_context(
     context->selective_depth = 0;
     context->position_key_count = 0;
     context->draw_score = 0;
+    context->root_move_offset = 0;
+    context->nnue_state_active = 0;
     context->nnue_states = new (std::nothrow) NnueState[MAX_SEARCH_PLY];
     if (context->nnue_states != 0) {
         memset(
@@ -71,8 +73,20 @@ void initialize_search_context(
             sizeof(NnueState) * MAX_SEARCH_PLY
         );
     }
+    context->classical_state_active = 0;
+    context->classical_states = new (std::nothrow)
+        ClassicalEvalState[MAX_SEARCH_PLY];
+    if (context->classical_states != 0) {
+        memset(
+            context->classical_states,
+            0,
+            sizeof(ClassicalEvalState) * MAX_SEARCH_PLY
+        );
+    }
     memset(context->static_evaluation_valid, 0,
            sizeof(context->static_evaluation_valid));
+    memset(context->classical_pending_valid, 0,
+           sizeof(context->classical_pending_valid));
     context->shared_state = shared_state;
     reset_zobrist_statistics();
     memset(
@@ -104,6 +118,8 @@ void destroy_search_context(SearchContext *context) {
     if (context != 0) {
         delete[] context->nnue_states;
         context->nnue_states = 0;
+        delete[] context->classical_states;
+        context->classical_states = 0;
     }
 }
 
@@ -188,6 +204,10 @@ void search_set_limits(SearchContext *context, const SearchLimits *limits) {
         : DEFAULT_SEARCH_POLL_INTERVAL;
     context->stop_requested = limits->stop_requested;
     context->draw_score = limits->draw_score;
+    context->root_move_offset = limits->root_move_offset;
+    if (context->root_move_offset < 0) {
+        context->root_move_offset = 0;
+    }
 }
 
 void search_set_position_history(
@@ -392,7 +412,8 @@ int search_evaluate_position(
 ) {
     int score;
 
-    if (context != 0 && context->nnue_states != 0 &&
+    if (context != 0 && context->nnue_state_active &&
+        context->nnue_states != 0 &&
         ply >= 0 && ply < MAX_SEARCH_PLY &&
         nnue_evaluate_with_state(
             position,
@@ -412,6 +433,21 @@ int search_evaluate_position(
 #endif
         return score;
     }
+    if (context != 0 && context->classical_state_active &&
+        context->classical_states != 0 &&
+        ply >= 0 && ply < MAX_SEARCH_PLY &&
+        !evaluation_cache_probe(position, &score) &&
+        search_materialize_classical_state(context, position, ply)) {
+        return evaluate_position_with_state(
+            position,
+            &context->classical_states[ply],
+            0
+        );
+    }
+    if (context != 0 && context->classical_state_active &&
+        evaluation_cache_probe(position, &score)) {
+        return score;
+    }
     return evaluate_position(position);
 }
 
@@ -424,7 +460,8 @@ int search_update_nnue_state(
 ) {
     int updated;
 
-    if (context == 0 || context->nnue_states == 0 ||
+    if (context == 0 || !context->nnue_state_active ||
+        context->nnue_states == 0 ||
         parent_ply < 0 || parent_ply + 1 >= MAX_SEARCH_PLY) {
         return 0;
     }
@@ -441,17 +478,123 @@ int search_update_nnue_state(
     return updated;
 }
 
+void search_prepare_classical_state(
+    SearchContext *context,
+    const Move *move,
+    const UndoState *undo,
+    int child_ply
+) {
+    if (context == 0 || !context->classical_state_active ||
+        context->classical_states == 0 || move == 0 || undo == 0 ||
+        child_ply < 0 || child_ply >= MAX_SEARCH_PLY) {
+        return;
+    }
+    context->classical_pending_moves[child_ply] = *move;
+    context->classical_pending_undos[child_ply] = *undo;
+    context->classical_pending_valid[child_ply] = 1;
+    context->classical_states[child_ply].valid = 0;
+}
+
+int search_materialize_classical_state(
+    SearchContext *context,
+    const Position *position,
+    int ply
+) {
+    int updated;
+
+    if (context == 0 || !context->classical_state_active ||
+        context->classical_states == 0 || position == 0 ||
+        ply < 0 || ply >= MAX_SEARCH_PLY) {
+        return 0;
+    }
+
+    if (context->classical_pending_valid[ply]) {
+        if (ply > 0) {
+            updated = classical_eval_state_update(
+                position,
+                &context->classical_pending_moves[ply],
+                &context->classical_pending_undos[ply],
+                &context->classical_states[ply - 1],
+                &context->classical_states[ply]
+            );
+        } else {
+            updated = classical_eval_state_build(
+                position,
+                &context->classical_states[ply]
+            );
+        }
+        context->classical_pending_valid[ply] = 0;
+        if (!updated) {
+            context->classical_states[ply].valid = 0;
+            return 0;
+        }
+    } else if (!context->classical_states[ply].valid ||
+               context->classical_states[ply].params_generation !=
+                   eval_params_generation()) {
+        return classical_eval_state_build(
+            position,
+            &context->classical_states[ply]
+        );
+    }
+
+    return context->classical_states[ply].valid;
+}
+
 void search_copy_nnue_state(
     SearchContext *context,
     int parent_ply,
     int child_ply
 ) {
-    if (context == 0 || context->nnue_states == 0 ||
+    if (context == 0 || !context->nnue_state_active ||
+        context->nnue_states == 0 ||
         parent_ply < 0 || parent_ply >= MAX_SEARCH_PLY ||
         child_ply < 0 || child_ply >= MAX_SEARCH_PLY) {
         return;
     }
     context->nnue_states[child_ply] = context->nnue_states[parent_ply];
+}
+
+int search_update_classical_state(
+    SearchContext *context,
+    const Position *position,
+    const Move *move,
+    const UndoState *undo,
+    int parent_ply
+) {
+    int updated;
+
+    if (context == 0 || !context->classical_state_active ||
+        context->classical_states == 0 ||
+        parent_ply < 0 || parent_ply + 1 >= MAX_SEARCH_PLY) {
+        return 0;
+    }
+    updated = classical_eval_state_update(
+        position,
+        move,
+        undo,
+        &context->classical_states[parent_ply],
+        &context->classical_states[parent_ply + 1]
+    );
+    if (!updated) {
+        context->classical_states[parent_ply + 1].valid = 0;
+    }
+    return updated;
+}
+
+void search_copy_classical_state(
+    SearchContext *context,
+    int parent_ply,
+    int child_ply
+) {
+    if (context == 0 || !context->classical_state_active ||
+        context->classical_states == 0 ||
+        parent_ply < 0 || parent_ply >= MAX_SEARCH_PLY ||
+        child_ply < 0 || child_ply >= MAX_SEARCH_PLY) {
+        return;
+    }
+    context->classical_states[child_ply] =
+        context->classical_states[parent_ply];
+    context->classical_pending_valid[child_ply] = 0;
 }
 
 int position_has_insufficient_material(const Position *position) {

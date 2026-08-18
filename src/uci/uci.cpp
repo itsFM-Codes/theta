@@ -6,12 +6,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <mutex>
 #include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
 #else
-#include <mutex>
 #include <thread>
 #endif
 
@@ -21,6 +21,7 @@
 #include "src/config/config.h"
 #include "src/engine/search.h"
 #include "src/eval/nnue.h"
+
 
 #define UCI_LINE_SIZE 4096
 #define UCI_FEN_SIZE 256
@@ -390,13 +391,256 @@ static void print_search_info(
     fflush(stdout);
 }
 
+typedef struct ParallelSearchWorker {
+    SearchSharedState state;
+    int initialized;
+    Move best_move;
+    PrincipalVariation variation;
+    int completed_depth;
+    int score;
+} ParallelSearchWorker;
+
+typedef struct ParallelSearchTask {
+    SearchSharedState *state;
+    Position position;
+    int maximum_depth;
+    SearchLimits limits;
+    Move *best_move;
+    PrincipalVariation *variation;
+    int *completed_depth;
+    int *score;
+    SearchInfoCallback callback;
+    void *user_data;
+} ParallelSearchTask;
+
+static void clear_uci_move(Move *move) {
+    if (move == 0) {
+        return;
+    }
+    move->from = NO_SQUARE;
+    move->to = NO_SQUARE;
+    move->promotion = PIECE_NONE;
+    move->flags = MOVE_FLAG_NONE;
+}
+
+static void execute_parallel_search_task(ParallelSearchTask *task) {
+    if (task == 0) {
+        return;
+    }
+    *task->score = search_iterative_with_state_and_limits(
+        task->state,
+        &task->position,
+        task->maximum_depth,
+        &task->limits,
+        task->best_move,
+        task->variation,
+        task->completed_depth,
+        task->callback,
+        task->user_data
+    );
+}
+
+#ifdef _WIN32
+static DWORD WINAPI parallel_search_thread_proc(LPVOID data) {
+    execute_parallel_search_task((ParallelSearchTask *)data);
+    return 0;
+}
+#endif
+
+static int maximum_uci_threads(void) {
+#ifdef _WIN32
+    SYSTEM_INFO system_info;
+
+    GetSystemInfo(&system_info);
+    if (system_info.dwNumberOfProcessors == 0) {
+        return 1;
+    }
+    return system_info.dwNumberOfProcessors > 64
+        ? 64
+        : (int)system_info.dwNumberOfProcessors;
+#else
+    unsigned int available = std::thread::hardware_concurrency();
+
+    if (available == 0) {
+        return 1;
+    }
+    return available > 64 ? 64 : (int)available;
+#endif
+}
+
+static int search_parallel(
+    SearchSharedState *base_state,
+    const Position *position,
+    int maximum_depth,
+    const SearchLimits *base_limits,
+    int thread_count,
+    Move *best_move,
+    PrincipalVariation *variation,
+    int *completed_depth,
+    SearchInfoCallback callback,
+    void *user_data
+) {
+    std::vector<ParallelSearchWorker> workers;
+#ifdef _WIN32
+    std::vector<HANDLE> search_threads;
+#else
+    std::vector<std::thread> search_threads;
+#endif
+    std::vector<ParallelSearchTask> tasks;
+    std::atomic<bool> local_stop_requested(false);
+    std::atomic<bool> *stop_requested = &local_stop_requested;
+    int best_index = -1;
+    int index;
+
+    if (thread_count <= 1 || base_state == 0 || position == 0) {
+        Position worker_position = position == 0 ? Position{} : *position;
+        return search_iterative_with_state_and_limits(
+            base_state,
+            &worker_position,
+            maximum_depth,
+            base_limits,
+            best_move,
+            variation,
+            completed_depth,
+            callback,
+            user_data
+        );
+    }
+
+    if (base_limits != 0 && base_limits->stop_requested != 0) {
+        stop_requested = base_limits->stop_requested;
+    }
+
+    workers.resize((size_t)thread_count);
+    tasks.resize((size_t)thread_count);
+    for (index = 0; index < thread_count; ++index) {
+        memset(&workers[index], 0, sizeof(workers[index]));
+        clear_uci_move(&workers[index].best_move);
+        workers[index].state.transposition_table =
+            base_state->transposition_table;
+        workers[index].state.transposition_table.thread_safe = 1;
+        workers[index].state.heuristics =
+            (SearchHeuristicTables *)calloc(
+                1,
+                sizeof(SearchHeuristicTables)
+            );
+        if (workers[index].state.heuristics == 0) {
+            for (int cleanup = 0; cleanup < index; ++cleanup) {
+                if (workers[cleanup].initialized) {
+                    free(workers[cleanup].state.heuristics);
+                    workers[cleanup].state.heuristics = 0;
+                }
+            }
+            {
+                Position fallback_position = *position;
+                return search_iterative_with_state_and_limits(
+                    base_state,
+                    &fallback_position,
+                    maximum_depth,
+                    base_limits,
+                    best_move,
+                    variation,
+                    completed_depth,
+                    callback,
+                    user_data
+                );
+            }
+        }
+        workers[index].initialized = 1;
+    }
+
+    for (index = 0; index < thread_count; ++index) {
+        tasks[index].state = &workers[index].state;
+        tasks[index].position = *position;
+        tasks[index].maximum_depth = maximum_depth;
+        tasks[index].limits = base_limits == 0
+            ? SearchLimits{}
+            : *base_limits;
+        tasks[index].limits.stop_requested = stop_requested;
+        tasks[index].limits.root_move_offset = index == 0
+            ? 0
+            : index * 11 + 1;
+        tasks[index].best_move = &workers[index].best_move;
+        tasks[index].variation = &workers[index].variation;
+        tasks[index].completed_depth = &workers[index].completed_depth;
+        tasks[index].score = &workers[index].score;
+        tasks[index].callback = index == 0 ? callback : 0;
+        tasks[index].user_data = user_data;
+#ifdef _WIN32
+        {
+            HANDLE handle = CreateThread(
+                0,
+                0,
+                parallel_search_thread_proc,
+                &tasks[index],
+                0,
+                0
+            );
+            if (handle != 0) {
+                search_threads.push_back(handle);
+            } else {
+                execute_parallel_search_task(&tasks[index]);
+            }
+        }
+#else
+        search_threads.emplace_back([&tasks, index]() {
+            execute_parallel_search_task(&tasks[index]);
+        });
+#endif
+    }
+
+#ifdef _WIN32
+    for (HANDLE search_thread : search_threads) {
+        WaitForSingleObject(search_thread, INFINITE);
+        CloseHandle(search_thread);
+    }
+#else
+    for (std::thread &search_thread : search_threads) {
+        search_thread.join();
+    }
+#endif
+
+    for (index = 0; index < thread_count; ++index) {
+        if (best_index < 0 ||
+            workers[index].completed_depth >
+                workers[best_index].completed_depth ||
+            (workers[index].completed_depth ==
+                 workers[best_index].completed_depth &&
+             workers[index].score > workers[best_index].score)) {
+            best_index = index;
+        }
+    }
+
+    if (best_index >= 0) {
+        if (best_move != 0) {
+            *best_move = workers[best_index].best_move;
+        }
+        if (variation != 0) {
+            *variation = workers[best_index].variation;
+        }
+        if (completed_depth != 0) {
+            *completed_depth = workers[best_index].completed_depth;
+        }
+    }
+
+    index = best_index >= 0 ? workers[best_index].score : 0;
+    for (ParallelSearchWorker &worker : workers) {
+        if (worker.initialized) {
+            free(worker.state.heuristics);
+            worker.state.heuristics = 0;
+        }
+    }
+    return index;
+}
+
 static void search_from_command(
     SearchSharedState *shared_state,
     Position position,
     const std::vector<uint64_t> &history,
     char *arguments,
     std::atomic<bool> *stop_requested,
-    int draw_score
+    int draw_score,
+    int thread_count
 ) {
     char *cursor = arguments;
     char *token;
@@ -503,11 +747,12 @@ static void search_from_command(
     limits.game_history_count = (int)history.size();
     limits.draw_score = draw_score;
 
-    search_iterative_with_state_and_limits(
+    search_parallel(
         shared_state,
         &position,
         depth,
         &limits,
+        thread_count,
         &best_move,
         &variation,
         &completed_depth,
@@ -535,6 +780,7 @@ typedef struct UciSearchTask {
     std::string arguments;
     std::atomic<bool> *stop_requested;
     int draw_score;
+    int thread_count;
 } UciSearchTask;
 
 static void execute_search_task(UciSearchTask *task) {
@@ -549,7 +795,8 @@ static void execute_search_task(UciSearchTask *task) {
         task->history,
         mutable_arguments.data(),
         task->stop_requested,
-        task->draw_score
+        task->draw_score,
+        task->thread_count
     );
     delete task;
 }
@@ -572,9 +819,17 @@ int run_uci(void) {
 #endif
     std::atomic<bool> stop_requested(false);
     int allow_draws = g_config.allow_draws;
+    int threads = g_config.threads;
+    int maximum_threads = maximum_uci_threads();
     int use_nnue = 0;
     std::string nnue_path;
     char line[UCI_LINE_SIZE];
+
+    if (threads < 1) {
+        threads = 1;
+    } else if (threads > maximum_threads) {
+        threads = maximum_threads;
+    }
 
     if (!initialize_search_shared_state(&shared_state)) {
         fprintf(stderr, "Error: Could not initialize shared search state\n");
@@ -619,7 +874,8 @@ int run_uci(void) {
             UciLock lock(uci_output_mutex);
             printf("id name Theta\n");
             printf("id author FM\n");
-            printf("option name Threads type spin default 1 min 1 max 1\n");
+            printf("option name Threads type spin default %d min 1 max %d\n",
+                   threads, maximum_threads);
             printf("option name Hash type spin default %d min 1 max 1024\n",
                    DEFAULT_TRANSPOSITION_TABLE_MB);
             printf("option name Clear Hash type button\n");
@@ -661,6 +917,12 @@ int run_uci(void) {
             stop_search();
             clear_search_shared_state(&shared_state);
         } else if (set_search_option_value(
+                arguments,
+                "setoption name Threads value ",
+                1,
+                maximum_threads,
+                &threads
+            ) || set_search_option_value(
                 arguments,
                 "setoption name Search LMR Depth Start value ",
                 2,
@@ -756,6 +1018,7 @@ int run_uci(void) {
             task->arguments = arguments + 2;
             task->stop_requested = &stop_requested;
             task->draw_score = allow_draws ? 0 : NO_DRAW_SCORE;
+            task->thread_count = threads;
 #ifdef _WIN32
             search_thread = CreateThread(
                 0,

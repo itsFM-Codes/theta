@@ -4,7 +4,7 @@
 #include "eval_params.h"
 #include "src/chess/position.h"
 
-#define EVAL_FEATURE_COUNT 9
+#define EVAL_FEATURE_COUNT EVAL_PHASE_TERM_COUNT
 
 typedef enum EvalFeatureIndex {
     EVAL_FEATURE_MATERIAL,
@@ -30,10 +30,23 @@ typedef struct EvalFeatureVector {
     double values[EVAL_FEATURE_COUNT];
 } EvalFeatureVector;
 
+typedef struct EvalPhaseFeatureVector {
+    double values[EVAL_FEATURE_COUNT][2];
+    int endgame_weight;
+} EvalPhaseFeatureVector;
+
 const EvalFeatureDefinition *eval_feature_definition(int index);
 void extract_eval_features(
     const Position *position,
     EvalFeatureVector *features
+);
+void extract_eval_phase_features(
+    const Position *position,
+    EvalPhaseFeatureVector *features
+);
+double eval_phase_feature_value(
+    const EvalPhaseFeatureVector *features,
+    int index
 );
 double eval_features_score(
     const EvalFeatureVector *features,

@@ -6,6 +6,7 @@
 #include "piece_activity.h"
 #include "piece_square_tables.h"
 #include "strategic.h"
+#include "src/chess/movegen.h"
 
 static const EvalFeatureDefinition FEATURE_DEFINITIONS[EVAL_FEATURE_COUNT] = {
     {"material", "eval_material_scale", 256, 224, 288},
@@ -68,6 +69,15 @@ static int endgame_weight_for_position(const Position *position) {
     return (params->max_phase - phase) * 256 / params->max_phase;
 }
 
+static double blend_phase_value(double middlegame, double endgame, int weight) {
+    if (weight < 0) {
+        weight = 0;
+    } else if (weight > 256) {
+        weight = 256;
+    }
+    return (middlegame * (256 - weight) + endgame * weight) / 256.0;
+}
+
 const EvalFeatureDefinition *eval_feature_definition(int index) {
     if (index < 0 || index >= EVAL_FEATURE_COUNT) {
         return 0;
@@ -79,8 +89,7 @@ void extract_eval_features(
     const Position *position,
     EvalFeatureVector *features
 ) {
-    uint64_t pieces;
-    int endgame_weight;
+    EvalPhaseFeatureVector phase_features;
     int index;
 
     if (features == 0) {
@@ -95,7 +104,41 @@ void extract_eval_features(
         return;
     }
 
+    extract_eval_phase_features(position, &phase_features);
+    for (index = 0; index < EVAL_FEATURE_COUNT; ++index) {
+        features->values[index] = eval_phase_feature_value(
+            &phase_features,
+            index
+        );
+    }
+}
+
+void extract_eval_phase_features(
+    const Position *position,
+    EvalPhaseFeatureVector *features
+) {
+    uint64_t pieces;
+    uint64_t white_attacks;
+    uint64_t black_attacks;
+    int endgame_weight;
+    int index;
+
+    if (features == 0) {
+        return;
+    }
+
+    for (index = 0; index < EVAL_FEATURE_COUNT; ++index) {
+        features->values[index][0] = 0.0;
+        features->values[index][1] = 0.0;
+    }
+    features->endgame_weight = 0;
+
+    if (position == 0) {
+        return;
+    }
+
     endgame_weight = endgame_weight_for_position(position);
+    features->endgame_weight = endgame_weight;
     pieces = position->occupied;
     while (pieces != 0) {
         int square = pop_first_square(&pieces);
@@ -106,23 +149,69 @@ void extract_eval_features(
             continue;
         }
 
-        features->values[EVAL_FEATURE_MATERIAL] +=
+        features->values[EVAL_FEATURE_MATERIAL][0] +=
             sign * eval_piece_type_value(piece_type(piece));
-        features->values[EVAL_FEATURE_PIECE_SQUARE] +=
-            sign * piece_square_value(piece, square, endgame_weight);
+        features->values[EVAL_FEATURE_MATERIAL][1] +=
+            sign * eval_piece_type_value(piece_type(piece));
+        features->values[EVAL_FEATURE_PIECE_SQUARE][0] +=
+            sign * piece_square_value(piece, square, 0);
+        features->values[EVAL_FEATURE_PIECE_SQUARE][1] +=
+            sign * piece_square_value(piece, square, 256);
     }
 
-    features->values[EVAL_FEATURE_MOBILITY] = mobility_score(position);
-    features->values[EVAL_FEATURE_PAWN_STRUCTURE] =
+    white_attacks = position_attack_map(position, COLOR_WHITE);
+    black_attacks = position_attack_map(position, COLOR_BLACK);
+
+    features->values[EVAL_FEATURE_MOBILITY][0] = mobility_score(position);
+    features->values[EVAL_FEATURE_MOBILITY][1] = mobility_score(position);
+    features->values[EVAL_FEATURE_PAWN_STRUCTURE][0] =
         pawn_structure_score(position);
-    features->values[EVAL_FEATURE_KING_SAFETY] =
-        king_safety_score(position, endgame_weight);
-    features->values[EVAL_FEATURE_PIECE_ACTIVITY] =
-        piece_activity_score(position, endgame_weight);
-    features->values[EVAL_FEATURE_THREATS] = threat_score(position);
-    features->values[EVAL_FEATURE_SPACE] = space_score(position);
-    features->values[EVAL_FEATURE_TEMPO] =
+    features->values[EVAL_FEATURE_PAWN_STRUCTURE][1] =
+        features->values[EVAL_FEATURE_PAWN_STRUCTURE][0];
+    features->values[EVAL_FEATURE_KING_SAFETY][0] =
+        king_safety_score_with_attacks(
+            position,
+            0,
+            white_attacks,
+            black_attacks
+        );
+    features->values[EVAL_FEATURE_KING_SAFETY][1] =
+        king_safety_score_with_attacks(
+            position,
+            256,
+            white_attacks,
+            black_attacks
+        );
+    features->values[EVAL_FEATURE_PIECE_ACTIVITY][0] =
+        piece_activity_score(position, 0);
+    features->values[EVAL_FEATURE_PIECE_ACTIVITY][1] =
+        piece_activity_score(position, 256);
+    features->values[EVAL_FEATURE_THREATS][0] =
+        threat_score_with_attacks(position, white_attacks, black_attacks);
+    features->values[EVAL_FEATURE_THREATS][1] =
+        features->values[EVAL_FEATURE_THREATS][0];
+    features->values[EVAL_FEATURE_SPACE][0] = space_score(position);
+    features->values[EVAL_FEATURE_SPACE][1] =
+        features->values[EVAL_FEATURE_SPACE][0];
+    features->values[EVAL_FEATURE_TEMPO][0] =
         position->side_to_move == COLOR_WHITE ? 256.0 : -256.0;
+    features->values[EVAL_FEATURE_TEMPO][1] =
+        features->values[EVAL_FEATURE_TEMPO][0];
+}
+
+double eval_phase_feature_value(
+    const EvalPhaseFeatureVector *features,
+    int index
+) {
+    if (features == 0 || index < 0 || index >= EVAL_FEATURE_COUNT) {
+        return 0.0;
+    }
+
+    return blend_phase_value(
+        features->values[index][0],
+        features->values[index][1],
+        features->endgame_weight
+    );
 }
 
 double eval_features_score(

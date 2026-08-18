@@ -4,6 +4,7 @@
 typedef struct EngineConfig {
     int max_depth;
     int allow_draws;
+    int threads;
     int search_lmr_depth_start;
     int search_lmr_move_start;
     int search_null_move_base;

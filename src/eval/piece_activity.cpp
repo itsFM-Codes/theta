@@ -14,16 +14,48 @@ static int file_has_pawn(const Position *position, int column, Color color) {
     return (position->piece_occupied[pawn] & (FILE_A_MASK << column)) != 0;
 }
 
-static int bishop_mobility(const Position *position, int square, Color color) {
+static uint64_t piece_attacks_for(
+    const Position *position,
+    int square,
+    PieceType type,
+    const uint64_t *cached_piece_attacks
+) {
+    if (cached_piece_attacks != 0 && is_valid_square(square)) {
+        return cached_piece_attacks[square];
+    }
+    return position_piece_attack_map(position, square, type);
+}
+
+static int bishop_mobility(
+    const Position *position,
+    int square,
+    Color color,
+    const uint64_t *cached_piece_attacks
+) {
     return __builtin_popcountll(
-        position_piece_attack_map(position, square, PIECE_TYPE_BISHOP) &
+        piece_attacks_for(
+            position,
+            square,
+            PIECE_TYPE_BISHOP,
+            cached_piece_attacks
+        ) &
         ~position->color_occupied[color]
     );
 }
 
-static int knight_mobility(const Position *position, int square, Color color) {
+static int knight_mobility(
+    const Position *position,
+    int square,
+    Color color,
+    const uint64_t *cached_piece_attacks
+) {
     return __builtin_popcountll(
-        position_piece_attack_map(position, square, PIECE_TYPE_KNIGHT) &
+        piece_attacks_for(
+            position,
+            square,
+            PIECE_TYPE_KNIGHT,
+            cached_piece_attacks
+        ) &
         ~position->color_occupied[color]
     );
 }
@@ -54,7 +86,8 @@ static int bad_bishop_penalty(
     const Position *position,
     int square,
     Color color,
-    const EvalParams *params
+    const EvalParams *params,
+    const uint64_t *cached_piece_attacks
 ) {
     int square_color = (square_row(square) + square_column(square)) & 1;
     int same_color_pawns = pawns_on_square_color(
@@ -65,7 +98,12 @@ static int bad_bishop_penalty(
     int penalty = same_color_pawns * params->bad_bishop_pawn_penalty;
 
     if (same_color_pawns >= 4 &&
-        bishop_mobility(position, square, color) <= 5) {
+        bishop_mobility(
+            position,
+            square,
+            color,
+            cached_piece_attacks
+        ) <= 5) {
         penalty += params->bad_bishop_mobility_penalty;
     }
 
@@ -104,7 +142,8 @@ static int side_piece_activity_score(
     const Position *position,
     Color color,
     int endgame_weight,
-    const EvalParams *params
+    const EvalParams *params,
+    const uint64_t *cached_piece_attacks
 ) {
     Piece bishop = color == COLOR_WHITE ? PIECE_WHITE_BISHOP : PIECE_BLACK_BISHOP;
     Piece knight = color == COLOR_WHITE ? PIECE_WHITE_KNIGHT : PIECE_BLACK_KNIGHT;
@@ -129,9 +168,20 @@ static int side_piece_activity_score(
 
         pieces &= pieces - 1;
         if (piece == bishop) {
-            int mobility = bishop_mobility(position, square, color);
+            int mobility = bishop_mobility(
+                position,
+                square,
+                color,
+                cached_piece_attacks
+            );
             bishops++;
-            score -= bad_bishop_penalty(position, square, color, params);
+            score -= bad_bishop_penalty(
+                position,
+                square,
+                color,
+                params,
+                cached_piece_attacks
+            );
             if (mobility <= 2) {
                 score -= (3 - mobility) * params->trapped_minor_penalty;
             }
@@ -144,7 +194,12 @@ static int side_piece_activity_score(
                 )) {
                 score += params->knight_outpost_bonus;
             }
-            if (knight_mobility(position, square, color) <= 1) {
+            if (knight_mobility(
+                    position,
+                    square,
+                    color,
+                    cached_piece_attacks
+                ) <= 1) {
                 score -= params->trapped_minor_penalty;
             }
         } else if (piece == rook) {
@@ -179,7 +234,11 @@ static int side_piece_activity_score(
     return score;
 }
 
-int piece_activity_score(const Position *position, int endgame_weight) {
+int piece_activity_score_with_piece_attacks(
+    const Position *position,
+    int endgame_weight,
+    const uint64_t *cached_piece_attacks
+) {
     const EvalParams *params = current_eval_params();
 
     if (position == 0) {
@@ -196,11 +255,21 @@ int piece_activity_score(const Position *position, int endgame_weight) {
         position,
         COLOR_WHITE,
         endgame_weight,
-        params
+        params,
+        cached_piece_attacks
     ) - side_piece_activity_score(
         position,
         COLOR_BLACK,
         endgame_weight,
-        params
+        params,
+        cached_piece_attacks
+    );
+}
+
+int piece_activity_score(const Position *position, int endgame_weight) {
+    return piece_activity_score_with_piece_attacks(
+        position,
+        endgame_weight,
+        0
     );
 }

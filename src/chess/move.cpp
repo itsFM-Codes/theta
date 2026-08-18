@@ -2,6 +2,51 @@
 
 #include "zobrist.h"
 
+static void move_set_piece(Position *position, int square, Piece piece) {
+    Piece previous_piece;
+    uint64_t square_mask;
+
+    if (position == 0 || !is_valid_square(square)) {
+        return;
+    }
+
+    previous_piece = position->board[square];
+    square_mask = UINT64_C(1) << square;
+    if (previous_piece != PIECE_NONE) {
+        Color previous_color = piece_color(previous_piece);
+
+        position->occupied &= ~square_mask;
+        if (previous_color != COLOR_NONE) {
+            position->color_occupied[previous_color] &= ~square_mask;
+        }
+        position->piece_occupied[previous_piece] &= ~square_mask;
+    }
+
+    position->board[square] = piece;
+    if (piece != PIECE_NONE) {
+        Color color = piece_color(piece);
+
+        position->occupied |= square_mask;
+        if (color != COLOR_NONE) {
+            position->color_occupied[color] |= square_mask;
+        }
+        position->piece_occupied[piece] |= square_mask;
+    }
+
+    if (previous_piece == PIECE_WHITE_KING && piece != PIECE_WHITE_KING) {
+        position->white_king_square = NO_SQUARE;
+    }
+    if (previous_piece == PIECE_BLACK_KING && piece != PIECE_BLACK_KING) {
+        position->black_king_square = NO_SQUARE;
+    }
+    if (piece == PIECE_WHITE_KING) {
+        position->white_king_square = square;
+    }
+    if (piece == PIECE_BLACK_KING) {
+        position->black_king_square = square;
+    }
+}
+
 static void remove_castling_right(Position *position, int right) {
     position->castling_rights &= ~right;
 }
@@ -58,8 +103,8 @@ static void move_castling_rook(Position *position, Move move) {
     }
 
     rook = position_piece_at(position, rook_from);
-    position_set_piece(position, rook_from, PIECE_NONE);
-    position_set_piece(position, rook_to, rook);
+    move_set_piece(position, rook_from, PIECE_NONE);
+    move_set_piece(position, rook_to, rook);
 }
 
 static void undo_castling_rook(Position *position, Move move) {
@@ -77,8 +122,8 @@ static void undo_castling_rook(Position *position, Move move) {
     }
 
     rook = position_piece_at(position, rook_from);
-    position_set_piece(position, rook_from, PIECE_NONE);
-    position_set_piece(position, rook_to, rook);
+    move_set_piece(position, rook_from, PIECE_NONE);
+    move_set_piece(position, rook_to, rook);
 }
 
 static int is_valid_promotion_piece(Piece piece, Color color) {
@@ -180,9 +225,9 @@ int make_move(Position *position, Move move, UndoState *undo) {
     }
 
     // Clear source and captured piece
-    position_set_piece(position, move.from, PIECE_NONE);
+    move_set_piece(position, move.from, PIECE_NONE);
     if (undo->captured_piece != PIECE_NONE) {
-        position_set_piece(
+        move_set_piece(
             position,
             undo->captured_square,
             PIECE_NONE
@@ -192,10 +237,10 @@ int make_move(Position *position, Move move, UndoState *undo) {
     // Place moved or promoted piece
     if (move.flags & MOVE_FLAG_PROMOTION) {
         placed_piece = move.promotion;
-        position_set_piece(position, move.to, placed_piece);
+        move_set_piece(position, move.to, placed_piece);
     } else {
         placed_piece = moved_piece;
-        position_set_piece(position, move.to, placed_piece);
+        move_set_piece(position, move.to, placed_piece);
     }
 
     // Move rook when castling
@@ -263,6 +308,8 @@ int make_move(Position *position, Move move, UndoState *undo) {
     position->zobrist_side_to_move = position->side_to_move;
     position->zobrist_castling_rights = position->castling_rights;
     position->zobrist_en_passant_square = position->en_passant_square;
+    position->pawn_history_key_valid = 0;
+    position->attack_map_cache_valid = 0;
     return 1;
 }
 
@@ -282,11 +329,11 @@ void undo_move(Position *position, Move move, const UndoState *undo) {
     }
 
     // Restore moved and captured pieces
-    position_set_piece(position, move.to, PIECE_NONE);
-    position_set_piece(position, move.from, undo->moved_piece);
+    move_set_piece(position, move.to, PIECE_NONE);
+    move_set_piece(position, move.from, undo->moved_piece);
 
     if (undo->captured_piece != PIECE_NONE) {
-        position_set_piece(
+        move_set_piece(
             position,
             undo->captured_square,
             undo->captured_piece
@@ -304,4 +351,6 @@ void undo_move(Position *position, Move move, const UndoState *undo) {
     position->zobrist_side_to_move = undo->zobrist_side_to_move;
     position->zobrist_castling_rights = undo->zobrist_castling_rights;
     position->zobrist_en_passant_square = undo->zobrist_en_passant_square;
+    position->pawn_history_key_valid = 0;
+    position->attack_map_cache_valid = 0;
 }

@@ -113,6 +113,7 @@ echo [BUILD] evaluation_test
     tests\evaluation_test.cpp ^
     src\chess\board.cpp ^
     src\chess\position.cpp ^
+    src\chess\fen.cpp ^
     src\chess\move.cpp ^
     src\chess\movegen.cpp ^
     src\chess\zobrist.cpp ^
@@ -125,6 +126,7 @@ echo [BUILD] evaluation_test
     src\eval\piece_activity.cpp ^
     src\eval\piece_square_tables.cpp ^
     src\eval\strategic.cpp ^
+    src\eval\stockfish_classical.cpp ^
     -o build\evaluation_test.exe
 if errorlevel 1 exit /b 1
 
@@ -207,6 +209,7 @@ echo [BUILD] search_test
     src\eval\piece_activity.cpp ^
     src\eval\piece_square_tables.cpp ^
     src\eval\strategic.cpp ^
+    src\eval\stockfish_classical.cpp ^
     -o build\search_test.exe
 if errorlevel 1 exit /b 1
 

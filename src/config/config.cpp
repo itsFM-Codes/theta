@@ -8,8 +8,9 @@
 #include <limits.h>
 
 #include "src/eval/eval_params.h"
+#include "src/eval/eval_features.h"
 
-EngineConfig g_config = {6, 1, 3, 3, 4, 105};
+EngineConfig g_config = {6, 1, 1, 3, 3, 4, 105};
 
 typedef struct ConfigIntTarget {
     const char *key;
@@ -107,6 +108,7 @@ static int set_config_int_target(
 void set_default_config(EngineConfig *config) {
     config->max_depth = 6;
     config->allow_draws = 1;
+    config->threads = 1;
     config->search_lmr_depth_start = 3;
     config->search_lmr_move_start = 3;
     config->search_null_move_base = 4;
@@ -144,6 +146,42 @@ int load_config(const char *filename) {
             {"eval_threat_scale", &eval_params.threat_scale, 0, 512},
             {"eval_space_scale", &eval_params.space_scale, 0, 512},
             {"eval_tempo_bonus", &eval_params.tempo_bonus, -50, 50},
+            {"eval_material_mg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_MATERIAL][0], 0, 512},
+            {"eval_material_eg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_MATERIAL][1], 0, 512},
+            {"eval_piece_square_mg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_PIECE_SQUARE][0], 0, 512},
+            {"eval_piece_square_eg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_PIECE_SQUARE][1], 0, 512},
+            {"eval_mobility_mg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_MOBILITY][0], 0, 512},
+            {"eval_mobility_eg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_MOBILITY][1], 0, 512},
+            {"eval_pawn_structure_mg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_PAWN_STRUCTURE][0], 0, 512},
+            {"eval_pawn_structure_eg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_PAWN_STRUCTURE][1], 0, 512},
+            {"eval_king_safety_mg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_KING_SAFETY][0], 0, 512},
+            {"eval_king_safety_eg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_KING_SAFETY][1], 0, 512},
+            {"eval_piece_activity_mg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_PIECE_ACTIVITY][0], 0, 512},
+            {"eval_piece_activity_eg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_PIECE_ACTIVITY][1], 0, 512},
+            {"eval_threat_mg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_THREATS][0], 0, 512},
+            {"eval_threat_eg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_THREATS][1], 0, 512},
+            {"eval_space_mg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_SPACE][0], 0, 512},
+            {"eval_space_eg_scale",
+             &eval_params.phase_scales[EVAL_FEATURE_SPACE][1], 0, 512},
+            {"eval_tempo_mg_bonus",
+             &eval_params.phase_scales[EVAL_FEATURE_TEMPO][0], -50, 50},
+            {"eval_tempo_eg_bonus",
+             &eval_params.phase_scales[EVAL_FEATURE_TEMPO][1], -50, 50},
             {"eval_pawn_value", &eval_params.piece_values[PIECE_TYPE_PAWN], 50, 200},
             {"eval_knight_value", &eval_params.piece_values[PIECE_TYPE_KNIGHT], 200, 450},
             {"eval_bishop_value", &eval_params.piece_values[PIECE_TYPE_BISHOP], 200, 450},
@@ -181,9 +219,36 @@ int load_config(const char *filename) {
             {"eval_trapped_minor_penalty", &eval_params.trapped_minor_penalty, 0, 80},
             {"eval_pawn_threat_base", &eval_params.pawn_threat_base, 0, 80},
             {"eval_hanging_piece_divisor", &eval_params.hanging_piece_divisor, 1, 100},
-            {"eval_safe_space_bonus", &eval_params.safe_space_bonus, 0, 20}
+            {"eval_safe_space_bonus", &eval_params.safe_space_bonus, 0, 20},
+            {"eval_advanced_safe_mobility_bonus",
+             &eval_params.advanced_safe_mobility_bonus, -64, 64},
+            {"eval_advanced_coordination_bonus",
+             &eval_params.advanced_coordination_bonus, -64, 64},
+            {"eval_advanced_king_ring_bonus",
+             &eval_params.advanced_king_ring_bonus, -64, 64},
+            {"eval_advanced_hanging_bonus",
+             &eval_params.advanced_hanging_bonus, -64, 64},
+            {"eval_advanced_passed_path_bonus",
+             &eval_params.advanced_passed_path_bonus, -64, 64}
+            ,{"eval_stockfish_classical_scale",
+             &eval_params.stockfish_classical_scale, 0, 512},
+            {"eval_stockfish_piece_scale",
+             &eval_params.stockfish_piece_scale, -512, 512},
+            {"eval_stockfish_mobility_scale",
+             &eval_params.stockfish_mobility_scale, -512, 512},
+            {"eval_stockfish_king_scale",
+             &eval_params.stockfish_king_scale, -512, 512},
+            {"eval_stockfish_threat_scale",
+             &eval_params.stockfish_threat_scale, -512, 512},
+            {"eval_stockfish_passed_scale",
+             &eval_params.stockfish_passed_scale, -512, 512},
+            {"eval_stockfish_space_scale",
+             &eval_params.stockfish_space_scale, -512, 512},
+            {"eval_stockfish_classical_replace",
+             &eval_params.stockfish_classical_replace, 0, 1},
         };
         ConfigIntTarget search_targets[] = {
+            {"threads", &g_config.threads, 1, 64},
             {"search_lmr_depth_start", &g_config.search_lmr_depth_start, 2, 6},
             {"search_lmr_move_start", &g_config.search_lmr_move_start, 2, 8},
             {"search_null_move_base", &g_config.search_null_move_base, 1, 8},
@@ -249,12 +314,7 @@ int load_config(const char *filename) {
             continue;
         }
 
-        if (strcmp(key, "threads") == 0) {
-            fprintf(
-                stderr,
-                "Warning: threads is reserved for future multi-threaded search; using one thread\n"
-            );
-        } else if (strcmp(key, "max_depth") == 0) {
+        if (strcmp(key, "max_depth") == 0) {
             if (number < 1 || number > 128) {
                 fprintf(stderr, "Warning: max_depth must be between 1 and 128\n");
             } else {

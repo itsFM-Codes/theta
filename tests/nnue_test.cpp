@@ -90,6 +90,58 @@ static void assert_incremental_sequence(
     }
 }
 
+static unsigned int next_random(unsigned int *state) {
+    *state = *state * 1664525u + 1013904223u;
+    return *state;
+}
+
+static void assert_random_incremental_sequences(void) {
+    unsigned int random_state = 0x20260808u;
+    int game;
+
+    for (game = 0; game < 20; ++game) {
+        Position position;
+        NnueState state;
+        int ply;
+
+        set_starting_position(&position);
+        assert(nnue_state_build(&position, &state));
+        for (ply = 0; ply < 100; ++ply) {
+            MoveList moves;
+            Move move;
+            UndoState undo;
+            NnueState child;
+            int full_score;
+            int incremental_score;
+            int index;
+
+            generate_legal_moves(&position, &moves);
+            if (moves.count == 0) {
+                break;
+            }
+            index = (int)(next_random(&random_state) %
+                          (unsigned int)moves.count);
+            move = moves.moves[index];
+            assert(make_legal_move(&position, move, &undo));
+            assert(nnue_state_update(
+                &position,
+                &move,
+                &undo,
+                &state,
+                &child
+            ));
+            assert(nnue_evaluate(&position, &full_score));
+            assert(nnue_evaluate_with_state(
+                &position,
+                &child,
+                &incremental_score
+            ));
+            assert(full_score == incremental_score);
+            state = child;
+        }
+    }
+}
+
 int main(int argc, char **argv) {
     const char path[] = "build\\nnue-test.bin";
     const char magic[] = "THNNUE01";
@@ -139,6 +191,7 @@ int main(int argc, char **argv) {
                 promotion,
                 (int)(sizeof(promotion) / sizeof(promotion[0]))
             );
+            assert_random_incremental_sequences();
         }
         nnue_unload();
         return 0;

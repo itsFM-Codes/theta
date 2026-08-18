@@ -121,7 +121,34 @@ const EvalParams DEFAULT_EVAL_PARAMS = {
 
     12,
     25,
-    3
+    3,
+
+    {
+        {256, 256},
+        {256, 256},
+        {256, 256},
+        {256, 256},
+        {256, 256},
+        {256, 256},
+        {256, 256},
+        {256, 256},
+        {0, 0}
+    },
+
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+
 };
 
 static EvalParams current_params = DEFAULT_EVAL_PARAMS;

@@ -9,5 +9,18 @@ int run_texel_tuning(
     double learning_rate,
     const char *output_path
 );
+int run_detailed_texel_tuning(
+    const char *dataset_path,
+    int iterations,
+    double learning_rate,
+    const char *output_path
+);
+int run_phase_texel_tuning(
+    const char *dataset_path,
+    int iterations,
+    double learning_rate,
+    const char *output_path
+);
+int print_phase_texel_loss(const char *dataset_path);
 
 #endif // EVAL_TUNING_H

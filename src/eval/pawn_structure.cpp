@@ -29,7 +29,12 @@ static int pop_first_square(uint64_t *squares) {
 }
 
 static uint64_t pawn_structure_key(const Position *position) {
-    uint64_t key = position->occupied * UINT64_C(0x9e3779b97f4a7c15);
+    uint64_t white_pawns = position->piece_occupied[PIECE_WHITE_PAWN];
+    uint64_t black_pawns = position->piece_occupied[PIECE_BLACK_PAWN];
+    uint64_t blocked_front_squares = position->occupied &
+        ((white_pawns >> 8) | (black_pawns << 8));
+    uint64_t key = blocked_front_squares *
+        UINT64_C(0x9e3779b97f4a7c15);
 
     key ^= position->piece_occupied[PIECE_WHITE_PAWN] *
         UINT64_C(0xbf58476d1ce4e5b9);

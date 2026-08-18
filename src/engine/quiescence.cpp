@@ -35,20 +35,27 @@ static int capture_value(const Position *position, Move move) {
     return piece_value(position_piece_at(position, move.to));
 }
 
-static int move_gives_check(Position *position, Move move) {
+static int move_gives_check(const Position *position, Move move) {
+#if !defined(THETA_DISABLE_FAST_CHECK)
+    return position_move_gives_check(position, move);
+#else
     UndoState undo;
     int gives_check;
 
-    if (!make_move(position, move, &undo)) {
+    if (!make_move((Position *)position, move, &undo)) {
         return 0;
     }
 
     gives_check = position_is_in_check(position);
-    undo_move(position, move, &undo);
+    undo_move((Position *)position, move, &undo);
     return gives_check;
+#endif
 }
 
-static int position_has_legal_move(Position *position, const MoveList *moves) {
+static int position_has_legal_move(
+    Position *position,
+    const MoveList *moves
+) {
     int index;
 
     for (index = 0; index < moves->count; ++index) {
@@ -85,6 +92,7 @@ static int quiescence_search_internal(
     int legal_move_count = 0;
     int original_alpha = alpha;
     int generated_all_moves;
+    uint64_t pinned_pieces = 0;
     int index;
 
     table_move.from = NO_SQUARE;
@@ -120,7 +128,15 @@ static int quiescence_search_internal(
         }
     }
 
+    if (context != 0 && context->classical_state_active) {
+        search_materialize_classical_state(context, position, ply);
+    }
+
     in_check = position_is_in_check(position);
+    pinned_pieces = position_pinned_pieces(
+        position,
+        position->side_to_move
+    );
     generated_all_moves = in_check ||
         quiescence_depth < QUIESCENCE_CHECK_DEPTH;
     if (generated_all_moves) {
@@ -151,7 +167,7 @@ static int quiescence_search_internal(
 
             if (context != 0) {
                 store_transposition_table(
-                    &context->shared_state->transposition_table,
+                &context->shared_state->transposition_table,
                     key, table_depth, search_score_to_table(score, ply),
                     TRANSPOSITION_EXACT, table_move,
                     &context->transposition_statistics
@@ -185,7 +201,7 @@ static int quiescence_search_internal(
         if (stand_pat >= beta) {
             if (context != 0) {
                 store_transposition_table(
-                    &context->shared_state->transposition_table,
+                &context->shared_state->transposition_table,
                     key, table_depth, search_score_to_table(stand_pat, ply),
                     TRANSPOSITION_LOWER_BOUND, table_move,
                     &context->transposition_statistics
@@ -264,11 +280,23 @@ static int quiescence_search_internal(
         if (context != 0) {
             context->legal_move_attempts++;
         }
-        if (!make_legal_move(position, move, &undo)) {
+        if (!make_legal_move_with_context(
+                position,
+                move,
+                &undo,
+                in_check,
+                pinned_pieces
+            )) {
             continue;
         }
         legal_move_count++;
         search_update_nnue_state(context, position, &move, &undo, ply);
+        search_prepare_classical_state(
+            context,
+            &move,
+            &undo,
+            ply + 1
+        );
 
         search_push_position(context, position);
         if (context != 0 && ply >= 0 && ply < MAX_SEARCH_PLY) {
@@ -300,7 +328,7 @@ static int quiescence_search_internal(
         if (score >= beta) {
             if (context != 0) {
                 store_transposition_table(
-                    &context->shared_state->transposition_table,
+                &context->shared_state->transposition_table,
                     key, table_depth, search_score_to_table(score, ply),
                     TRANSPOSITION_LOWER_BOUND, move,
                     &context->transposition_statistics
@@ -331,7 +359,7 @@ static int quiescence_search_internal(
 
     if (context != 0) {
         store_transposition_table(
-            &context->shared_state->transposition_table,
+                &context->shared_state->transposition_table,
             key, table_depth, search_score_to_table(best_score, ply),
             best_score <= original_alpha
                 ? TRANSPOSITION_UPPER_BOUND

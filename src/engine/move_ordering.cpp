@@ -1,5 +1,7 @@
 #include "move_ordering.h"
 
+#include <algorithm>
+
 #include "static_exchange.h"
 
 #include "src/chess/movegen.h"
@@ -117,17 +119,21 @@ static int piece_value(Piece piece) {
     return 0;
 }
 
-static int move_gives_check(Position *position, Move move) {
+static int move_gives_check(const Position *position, Move move) {
+#if !defined(THETA_DISABLE_FAST_CHECK)
+    return position_move_gives_check(position, move);
+#else
     UndoState undo;
     int gives_check;
 
-    if (!make_move(position, move, &undo)) {
+    if (!make_move((Position *)position, move, &undo)) {
         return 0;
     }
 
     gives_check = position_is_in_check(position);
-    undo_move(position, move, &undo);
+    undo_move((Position *)position, move, &undo);
     return gives_check;
+#endif
 }
 
 static int killer_move_score(
@@ -258,7 +264,6 @@ void record_correction_history(
         context->shared_state->heuristics == 0 || position == 0) {
         return;
     }
-
     if (score_delta > CORRECTION_HISTORY_LIMIT) {
         score_delta = CORRECTION_HISTORY_LIMIT;
     } else if (score_delta < -CORRECTION_HISTORY_LIMIT) {
@@ -506,10 +511,13 @@ static int move_order_score(
 }
 
 static void sort_picker(MovePicker *picker) {
-    Move sorted_moves[MAX_MOVES];
-    int sorted_scores[MAX_MOVES];
-    int sorted_see_scores[MAX_MOVES];
-    unsigned char sorted_see_valid[MAX_MOVES];
+    struct ScoredMove {
+        Move move;
+        int score;
+        int see_score;
+        unsigned char see_valid;
+        int original_index;
+    } scored[MAX_MOVES];
     int index;
 
     if (picker == 0 || picker->moves == 0) {
@@ -517,29 +525,29 @@ static void sort_picker(MovePicker *picker) {
     }
 
     for (index = 0; index < picker->moves->count; ++index) {
-        int insert = index;
-        int score = picker->scores[index];
-        int see_score = picker->see_scores[index];
-        unsigned char see_valid = picker->see_valid[index];
-
-        while (insert > 0 &&
-               sorted_scores[insert - 1] < score) {
-            sorted_scores[insert] = sorted_scores[insert - 1];
-            sorted_moves[insert] = sorted_moves[insert - 1];
-            sorted_see_scores[insert] = sorted_see_scores[insert - 1];
-            sorted_see_valid[insert] = sorted_see_valid[insert - 1];
-            insert--;
-        }
-        sorted_scores[insert] = score;
-        sorted_moves[insert] = picker->moves->moves[index];
-        sorted_see_scores[insert] = see_score;
-        sorted_see_valid[insert] = see_valid;
+        scored[index].move = picker->moves->moves[index];
+        scored[index].score = picker->scores[index];
+        scored[index].see_score = picker->see_scores[index];
+        scored[index].see_valid = picker->see_valid[index];
+        scored[index].original_index = index;
     }
+
+    std::sort(
+        scored,
+        scored + picker->moves->count,
+        [](const ScoredMove &first, const ScoredMove &second) {
+            if (first.score != second.score) {
+                return first.score > second.score;
+            }
+            return first.original_index < second.original_index;
+        }
+    );
+
     for (index = 0; index < picker->moves->count; ++index) {
-        picker->scores[index] = sorted_scores[index];
-        picker->moves->moves[index] = sorted_moves[index];
-        picker->see_scores[index] = sorted_see_scores[index];
-        picker->see_valid[index] = sorted_see_valid[index];
+        picker->scores[index] = scored[index].score;
+        picker->moves->moves[index] = scored[index].move;
+        picker->see_scores[index] = scored[index].see_score;
+        picker->see_valid[index] = scored[index].see_valid;
     }
 }
 
@@ -570,6 +578,7 @@ void initialize_move_picker(
     int ply,
     const Move *table_move
 ) {
+    int has_quiet_move = 0;
     int index;
 
     if (picker == 0) {
@@ -578,9 +587,23 @@ void initialize_move_picker(
 
     picker->moves = moves;
     picker->next_index = 0;
-    initialize_threat_by_lesser(position, picker->threat_by_lesser);
     if (position == 0 || moves == 0) {
         return;
+    }
+
+    for (index = 0; index < moves->count; ++index) {
+        if ((moves->moves[index].flags &
+             (MOVE_FLAG_CAPTURE | MOVE_FLAG_PROMOTION)) == 0) {
+            has_quiet_move = 1;
+            break;
+        }
+    }
+    if (has_quiet_move) {
+        initialize_threat_by_lesser(position, picker->threat_by_lesser);
+    } else {
+        for (index = 0; index <= PIECE_TYPE_KING; ++index) {
+            picker->threat_by_lesser[index] = 0;
+        }
     }
 
     for (index = 0; index < moves->count; ++index) {
@@ -671,7 +694,7 @@ void record_quiet_cutoff(
     }
 
     update_pawn_history_score(
-        &context->shared_state->heuristics
+                    &context->shared_state->heuristics
             ->pawn_history[color][pawn_history_index(position)]
                 [piece_type(position_piece_at(position, move.from))][move.to],
         bonus
@@ -693,7 +716,7 @@ void record_quiet_cutoff(
                 previous_type != PIECE_TYPE_NONE &&
                 moving_type != PIECE_TYPE_NONE) {
                 update_continuation_history_score(
-                    &context->shared_state->heuristics
+                &context->shared_state->heuristics
                         ->continuation_history[index][previous_type]
                             [previous_move.to][moving_type][move.to],
                     index == 0 ? bonus : index < 3 ? bonus / 2 : bonus / 4
@@ -735,19 +758,19 @@ void record_quiet_failures(
             int continuation_index;
 
             update_history_score(
-                &context->shared_state->heuristics
+                    &context->shared_state->heuristics
                     ->history[color][move.from][move.to],
                 penalty
             );
             if (ply >= 0 && ply < LOW_PLY_HISTORY_SIZE) {
                 update_continuation_history_score(
-                    &context->shared_state->heuristics
+                &context->shared_state->heuristics
                         ->low_ply_history[ply][color][move.from][move.to],
                     penalty * 712 / 1024
                 );
             }
             update_pawn_history_score(
-                &context->shared_state->heuristics
+                            &context->shared_state->heuristics
                     ->pawn_history[color][pawn_history_index(position)]
                         [moving_type][move.to],
                 penalty
@@ -770,7 +793,7 @@ void record_quiet_failures(
                         previous_type != PIECE_TYPE_NONE &&
                         moving_type != PIECE_TYPE_NONE) {
                         update_continuation_history_score(
-                            &context->shared_state->heuristics
+                    &context->shared_state->heuristics
                                 ->continuation_history[continuation_index]
                                     [previous_type][previous_move.to]
                                         [moving_type][move.to],
@@ -854,7 +877,7 @@ void record_capture_failures(
         }
 
         update_history_score(
-            &context->shared_state->heuristics
+        &context->shared_state->heuristics
                 ->capture_history[color][piece_type(attacker)]
                     [move.to][piece_type(victim)],
             penalty

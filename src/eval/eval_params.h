@@ -3,6 +3,8 @@
 
 #include "src/chess/board.h"
 
+#define EVAL_PHASE_TERM_COUNT 9
+
 typedef struct EvalParams {
     int piece_values[PIECE_TYPE_KING + 1];
     int max_phase;
@@ -62,6 +64,32 @@ typedef struct EvalParams {
     int pawn_threat_base;
     int hanging_piece_divisor;
     int safe_space_bonus;
+
+    // Independent middlegame/endgame scales for the top-level evaluator.
+    // The legacy scalar fields above remain available to the existing tuning
+    // tools; the phase scales are what the runtime evaluator uses.
+    int phase_scales[EVAL_PHASE_TERM_COUNT][2];
+
+    // Optional attack-aware HCE terms. They default to zero so new feature
+    // code can be screened and tuned without changing the baseline.
+    int advanced_safe_mobility_bonus;
+    int advanced_coordination_bonus;
+    int advanced_king_ring_bonus;
+    int advanced_hanging_bonus;
+    int advanced_passed_path_bonus;
+
+    // Scale for the optional Stockfish-style classical term set. When any
+    // per-component scale below is non-zero, those scales replace this
+    // aggregate scale and allow the terms to be tuned independently.
+    int stockfish_classical_scale;
+    int stockfish_piece_scale;
+    int stockfish_mobility_scale;
+    int stockfish_king_scale;
+    int stockfish_threat_scale;
+    int stockfish_passed_scale;
+    int stockfish_space_scale;
+    int stockfish_classical_replace;
+
 } EvalParams;
 
 extern const EvalParams DEFAULT_EVAL_PARAMS;

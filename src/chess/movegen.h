@@ -7,8 +7,22 @@ void generate_moves(const Position *position, MoveList *moves);
 void generate_tactical_moves(const Position *position, MoveList *moves);
 void generate_legal_moves(Position *position, MoveList *moves);
 int make_legal_move(Position *position, Move move, UndoState *undo);
+int make_legal_move_with_check(
+    Position *position,
+    Move move,
+    UndoState *undo,
+    int in_check
+);
+int make_legal_move_with_context(
+    Position *position,
+    Move move,
+    UndoState *undo,
+    int in_check,
+    uint64_t pinned_pieces
+);
 
 int find_king(const Position *position, Color color);
+uint64_t position_pinned_pieces(const Position *position, Color color);
 uint64_t position_pawn_attack_map(const Position *position, Color color);
 uint64_t position_piece_attack_map(
     const Position *position,
@@ -16,6 +30,7 @@ uint64_t position_piece_attack_map(
     PieceType type
 );
 uint64_t position_attack_map(const Position *position, Color color);
+int position_move_gives_check(const Position *position, Move move);
 int is_square_attacked(
     const Position *position,
     int square,

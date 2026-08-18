@@ -29,31 +29,30 @@ are a good sign, but they are not proof of playing strength by themselves.
 | Position | Depth | Score | Best move | Nodes |
 | --- | ---: | ---: | --- | ---: |
 | 1 | 5 | 39 | g1f3 | 3,857 |
-| 2 | 5 | -345 | d5d6 | 21,172 |
+| 2 | 5 | -345 | d5d6 | 21,045 |
 | 3 | 5 | -31 | a5a6 | 748 |
 | 4 | 5 | 0 | e1f2 | 6,525 |
-| **Total** | | | | **32,302** |
+| **Total** | | | | **32,175** |
 
 ## Current strength measurements
 
-Measured 2026-08-05 with Cute Chess, 40 games, paired colors, sequential
-openings, `2+0.02`, 16 MB hash, one thread, and Stockfish 18 limited to Elo
-2800:
+Measured 2026-08-16 with Cute Chess, 100 games, paired colors, sequential
+openings, `2+0.02`, 16 MB hash, one thread, and Stockfish 18 limited to the
+corresponding target Elo:
 
-| Mode | Score | Elo difference | Estimated performance |
-| --- | ---: | ---: | ---: |
-| NNUE enabled | 13-14-13 | -8.7 +/- 90.3 | ~2791 |
-| NNUE disabled | 3-33-4 | -338.0 +/- 175.3 | ~2462 |
-
-These are provisional 40-game estimates; the confidence intervals are wide.
+| Mode | Stockfish limit | Score | Elo difference | Estimated performance |
+| --- | ---: | ---: | ---: | ---: |
+| NNUE enabled | 2800 | 43-16-41 | +96.2 +/- 53.2 | ~2896 |
+| NNUE disabled | 2500 | 39-42-19 | -10.4 +/- 61.9 | ~2490 |
 
 ## Current NPS measurements
 
-The deterministic `bench` command above runs with NNUE disabled and measured
-169,120 NPS on the current Windows native build. For a directly comparable
-fixed-time measurement, three 1-second start-position searches produced:
+The deterministic `bench` command above runs with NNUE disabled and searched
+32,175 nodes in the latest Windows native build. Five repeated runs measured
+170,238-185,982 NPS (average ~179.5k). For a directly comparable fixed-time
+measurement, three 1-second start-position searches produced:
 
 | Mode | Runs | Average NPS |
 | --- | --- | ---: |
-| NNUE disabled | 138,567; 147,805; 141,450 | ~142.6k |
-| NNUE enabled | 43,864; 44,127; 47,670 | ~45.2k |
+| NNUE disabled | 182,373; 181,590; 172,931 | ~179.0k |
+| NNUE enabled | 105,116; 100,006; 103,800 | ~103.0k |

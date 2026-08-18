@@ -12,9 +12,18 @@
 struct Move;
 struct UndoState;
 
+typedef struct NnuePositionData {
+    unsigned char pieces[64];
+    uint64_t occupied;
+    uint64_t colors[2];
+    uint64_t types[8];
+    int kings[2];
+} NnuePositionData;
+
 typedef struct NnueState {
-    int32_t psq_accumulators[2][STOCKFISH_NNUE_HALF_DIMENSIONS];
+    int16_t psq_accumulators[2][STOCKFISH_NNUE_HALF_DIMENSIONS];
     int32_t psqt_accumulators[2][STOCKFISH_NNUE_BUCKETS];
+    NnuePositionData position_data;
     unsigned int generation;
     int valid;
 } NnueState;

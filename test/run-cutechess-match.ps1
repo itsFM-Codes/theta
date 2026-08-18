@@ -47,6 +47,13 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $pgn = Join-Path $results "theta-vs-stockfish-$stamp.pgn"
 $log = Join-Path $results "theta-vs-stockfish-$stamp.log"
 $thetaUciOptions = @()
+if ($ThetaUseNnue -eq "true" -and -not $ThetaNnueFile) {
+    $defaultNnue = Join-Path $root "local\Stockfish\src\nn-ab28990d4ea3.nnue"
+    if (-not (Test-Path -LiteralPath $defaultNnue)) {
+        throw "NNUE was requested but the default network was not found: $defaultNnue"
+    }
+    $ThetaNnueFile = $defaultNnue
+}
 if ($ThetaNnueFile) {
     $thetaUciOptions += "option.NNUEFile=$ThetaNnueFile"
 }

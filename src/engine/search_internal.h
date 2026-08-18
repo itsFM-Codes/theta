@@ -6,6 +6,7 @@
 #include "search.h"
 #include "search_state.h"
 #include "transposition_table.h"
+#include "src/eval/evaluation.h"
 #include "src/eval/nnue.h"
 
 #define MAX_KILLER_PLY 64
@@ -58,7 +59,14 @@ typedef struct SearchContext {
     uint64_t position_keys[MAX_POSITION_HISTORY];
     int position_key_count;
     int draw_score;
+    int root_move_offset;
+    int nnue_state_active;
     NnueState *nnue_states;
+    int classical_state_active;
+    ClassicalEvalState *classical_states;
+    Move classical_pending_moves[MAX_SEARCH_PLY];
+    UndoState classical_pending_undos[MAX_SEARCH_PLY];
+    int classical_pending_valid[MAX_SEARCH_PLY];
     // Shared engine state; the rest is worker-local.
     SearchSharedState *shared_state;
     TranspositionTableStatistics transposition_statistics;
@@ -101,6 +109,29 @@ int search_update_nnue_state(
     int parent_ply
 );
 void search_copy_nnue_state(
+    SearchContext *context,
+    int parent_ply,
+    int child_ply
+);
+int search_update_classical_state(
+    SearchContext *context,
+    const Position *position,
+    const Move *move,
+    const UndoState *undo,
+    int parent_ply
+);
+void search_prepare_classical_state(
+    SearchContext *context,
+    const Move *move,
+    const UndoState *undo,
+    int child_ply
+);
+int search_materialize_classical_state(
+    SearchContext *context,
+    const Position *position,
+    int ply
+);
+void search_copy_classical_state(
     SearchContext *context,
     int parent_ply,
     int child_ply

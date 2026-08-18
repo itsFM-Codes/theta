@@ -1,5 +1,8 @@
 #include <assert.h>
+#include <stdint.h>
 
+#include "src/chess/fen.h"
+#include "src/chess/movegen.h"
 #include "src/eval/evaluation.h"
 #include "src/eval/king_safety.h"
 #include "src/eval/mobility.h"
@@ -70,6 +73,38 @@ static void test_endgame_king_table(void) {
     );
 
     assert(center_value > corner_value);
+}
+
+static void test_endgame_piece_square_tables(void) {
+    Position position;
+    EvaluationTrace trace = {};
+    const int white_knight = make_square(5, 2);
+    const int white_king = make_square(6, 4);
+    const int black_king = make_square(7, 7);
+    int endgame_weight;
+    int piece_square_mg;
+    int piece_square_eg;
+    int expected;
+
+    assert(position_from_fen(
+        &position,
+        "8/8/8/8/8/2N5/4K3/7k w - - 0 1"
+    ));
+    endgame_weight = (24 - 1) * 256 / 24;
+    piece_square_mg =
+        piece_square_value(PIECE_WHITE_KNIGHT, white_knight, 0) +
+        piece_square_value(PIECE_WHITE_KING, white_king, 0) -
+        piece_square_value(PIECE_BLACK_KING, black_king, 0);
+    piece_square_eg =
+        piece_square_value(PIECE_WHITE_KNIGHT, white_knight, 256) +
+        piece_square_value(PIECE_WHITE_KING, white_king, 256) -
+        piece_square_value(PIECE_BLACK_KING, black_king, 256);
+    expected = KNIGHT_VALUE + (
+        piece_square_mg * (256 - endgame_weight) +
+        piece_square_eg * endgame_weight
+    ) / 256;
+    evaluate_position_with_trace(&position, &trace);
+    assert(trace.material_and_piece_square == expected);
 }
 
 static void test_bishop_mobility(void) {
@@ -432,7 +467,7 @@ static void test_evaluation_trace_matches_total(void) {
     assert(trace.total == score);
     assert(trace.total == trace.material_and_piece_square + trace.mobility +
            trace.pawn_structure + trace.king_safety + trace.piece_activity +
-           trace.threats + trace.space + trace.tempo);
+           trace.threats + trace.space + trace.tempo + trace.advanced);
 }
 
 static void test_pawn_hash_tracks_blockers(void) {
@@ -453,12 +488,189 @@ static void test_pawn_hash_tracks_blockers(void) {
     assert(pawn_structure_score(&blocked) == blocked_score);
 }
 
+static Move find_legal_move(Position *position, const char *text) {
+    MoveList moves;
+    int from = (text[0] - 'a') + (('8' - text[1]) * 8);
+    int to = (text[2] - 'a') + (('8' - text[3]) * 8);
+    Piece promotion = PIECE_NONE;
+    int index;
+
+    if (text[4] != '\0') {
+        int white = position->side_to_move == COLOR_WHITE;
+
+        switch (text[4]) {
+            case 'q':
+                promotion = white ? PIECE_WHITE_QUEEN : PIECE_BLACK_QUEEN;
+                break;
+            case 'r':
+                promotion = white ? PIECE_WHITE_ROOK : PIECE_BLACK_ROOK;
+                break;
+            case 'b':
+                promotion = white ? PIECE_WHITE_BISHOP : PIECE_BLACK_BISHOP;
+                break;
+            case 'n':
+                promotion = white ? PIECE_WHITE_KNIGHT : PIECE_BLACK_KNIGHT;
+                break;
+            default:
+                break;
+        }
+    }
+
+    generate_legal_moves(position, &moves);
+    for (index = 0; index < moves.count; ++index) {
+        Move move = moves.moves[index];
+
+        if (move.from == from && move.to == to &&
+            move.promotion == promotion) {
+            return move;
+        }
+    }
+
+    assert(0 && "test move was not legal");
+    {
+        Move missing = {};
+        return missing;
+    }
+}
+
+static void assert_state_trace_matches(const Position *position,
+                                       const ClassicalEvalState *state) {
+    EvaluationTrace full_trace = {};
+    EvaluationTrace state_trace = {};
+    int full_score = evaluate_position_with_trace(position, &full_trace);
+    int state_score = evaluate_position_with_state(
+        position,
+        state,
+        &state_trace
+    );
+
+    assert(full_score == state_score);
+    assert(full_trace.material_and_piece_square ==
+           state_trace.material_and_piece_square);
+    assert(full_trace.mobility == state_trace.mobility);
+    assert(full_trace.pawn_structure == state_trace.pawn_structure);
+    assert(full_trace.king_safety == state_trace.king_safety);
+    assert(full_trace.piece_activity == state_trace.piece_activity);
+    assert(full_trace.threats == state_trace.threats);
+    assert(full_trace.space == state_trace.space);
+    assert(full_trace.tempo == state_trace.tempo);
+    assert(full_trace.advanced == state_trace.advanced);
+    assert(full_trace.total == state_trace.total);
+    assert(state->attack_maps[COLOR_WHITE] ==
+           position_attack_map(position, COLOR_WHITE));
+    assert(state->attack_maps[COLOR_BLACK] ==
+           position_attack_map(position, COLOR_BLACK));
+}
+
+static unsigned int evaluation_test_random(unsigned int *value) {
+    *value = *value * 1664525u + 1013904223u;
+    return *value;
+}
+
+static void test_incremental_classical_state(void) {
+    static const char *const special_moves[] = {
+        "e5d6", "e8c8", "e1g1"
+    };
+    static const char *const promotion_moves[] = {"a7a8q"};
+    const char *const special_fen =
+        "r3k2r/8/8/3pP3/8/8/8/R3K2R w KQkq d6 0 1";
+    const char *const promotion_fen =
+        "4k3/P7/8/8/8/8/8/4K3 w - - 0 1";
+    unsigned int random_state = 0x20260808u;
+    int game;
+
+    {
+        Position position;
+        ClassicalEvalState state;
+        int index;
+
+        assert(position_from_fen(&position, special_fen));
+        assert(classical_eval_state_build(&position, &state));
+        assert_state_trace_matches(&position, &state);
+        for (index = 0;
+             index < (int)(sizeof(special_moves) / sizeof(special_moves[0]));
+             ++index) {
+            Move move = find_legal_move(&position, special_moves[index]);
+            UndoState undo;
+            ClassicalEvalState child;
+
+            assert(make_legal_move(&position, move, &undo));
+            assert(classical_eval_state_update(
+                &position,
+                &move,
+                &undo,
+                &state,
+                &child
+            ));
+            assert_state_trace_matches(&position, &child);
+            state = child;
+        }
+    }
+
+    {
+        Position position;
+        ClassicalEvalState state;
+        Move move;
+        UndoState undo;
+        ClassicalEvalState child;
+
+        assert(position_from_fen(&position, promotion_fen));
+        assert(classical_eval_state_build(&position, &state));
+        move = find_legal_move(&position, promotion_moves[0]);
+        assert(make_legal_move(&position, move, &undo));
+        assert(classical_eval_state_update(
+            &position,
+            &move,
+            &undo,
+            &state,
+            &child
+        ));
+        assert_state_trace_matches(&position, &child);
+    }
+
+    for (game = 0; game < 20; ++game) {
+        Position position;
+        ClassicalEvalState state;
+        int ply;
+
+        set_starting_position(&position);
+        assert(classical_eval_state_build(&position, &state));
+        for (ply = 0; ply < 100; ++ply) {
+            MoveList moves;
+            Move move;
+            UndoState undo;
+            ClassicalEvalState child;
+            int index;
+
+            assert_state_trace_matches(&position, &state);
+            generate_legal_moves(&position, &moves);
+            if (moves.count == 0) {
+                break;
+            }
+            index = (int)(evaluation_test_random(&random_state) %
+                          (unsigned int)moves.count);
+            move = moves.moves[index];
+            assert(make_legal_move(&position, move, &undo));
+            assert(classical_eval_state_update(
+                &position,
+                &move,
+                &undo,
+                &state,
+                &child
+            ));
+            assert_state_trace_matches(&position, &child);
+            state = child;
+        }
+    }
+}
+
 int main(void) {
     test_starting_position();
     test_side_to_move_score();
     test_material_difference();
     test_piece_square_tables();
     test_endgame_king_table();
+    test_endgame_piece_square_tables();
     test_bishop_mobility();
     test_pawn_structure();
     test_king_safety();
@@ -469,5 +681,6 @@ int main(void) {
     test_major_piece_file_pressure();
     test_evaluation_trace_matches_total();
     test_pawn_hash_tracks_blockers();
+    test_incremental_classical_state();
     return 0;
 }

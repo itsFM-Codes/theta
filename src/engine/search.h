@@ -74,6 +74,7 @@ typedef struct SearchLimits {
     const uint64_t *game_history;
     int game_history_count;
     int draw_score;
+    int root_move_offset;
 } SearchLimits;
 
 int search_position(Position *position, int depth, Move *best_move);

@@ -6,12 +6,20 @@
 
 class TranspositionLock {
 public:
-    explicit TranspositionLock(TranspositionMutex &mutex) : mutex_(mutex) {
-        mutex_.lock();
+    TranspositionLock(TranspositionMutex &mutex, int enabled)
+        : mutex_(mutex), enabled_(enabled != 0) {
+        if (enabled_) {
+            mutex_.lock();
+        }
     }
-    ~TranspositionLock() { mutex_.unlock(); }
+    ~TranspositionLock() {
+        if (enabled_) {
+            mutex_.unlock();
+        }
+    }
 private:
     TranspositionMutex &mutex_;
+    int enabled_;
 };
 
 static int table_lock_index(const TranspositionTable *table, uint64_t bucket) {
@@ -57,6 +65,7 @@ int initialize_transposition_table_mb(TranspositionTable *table, int size_mb) {
     table->generation = 0;
     table->locks = 0;
     table->lock_count = 0;
+    table->thread_safe = 0;
 
     bytes = (size_t)size_mb * 1024u * 1024u;
     entry_count = bytes / sizeof(TranspositionEntry);
@@ -114,6 +123,7 @@ void destroy_transposition_table(TranspositionTable *table) {
     table->bucket_count = 0;
     table->size_mb = 0;
     table->lock_count = 0;
+    table->thread_safe = 0;
 }
 
 void advance_transposition_table_generation(TranspositionTable *table) {
@@ -144,9 +154,12 @@ int probe_transposition_table(
     }
 
     bucket_start = table_bucket_start(table, key);
-    TranspositionLock lock(table->locks[table_lock_index(
-        table, (uint64_t)(bucket_start / TRANSPOSITION_CLUSTER_SIZE)
-    )]);
+    TranspositionLock lock(
+        table->locks[table_lock_index(
+            table, (uint64_t)(bucket_start / TRANSPOSITION_CLUSTER_SIZE)
+        )],
+        table->thread_safe
+    );
 
     for (index = 0; index < TRANSPOSITION_CLUSTER_SIZE; ++index) {
         const TranspositionEntry *entry = &table->entries[bucket_start + index];
@@ -196,9 +209,12 @@ int probe_transposition_static_evaluation(
     }
 
     bucket_start = table_bucket_start(table, key);
-    TranspositionLock lock(table->locks[table_lock_index(
-        table, (uint64_t)(bucket_start / TRANSPOSITION_CLUSTER_SIZE)
-    )]);
+    TranspositionLock lock(
+        table->locks[table_lock_index(
+            table, (uint64_t)(bucket_start / TRANSPOSITION_CLUSTER_SIZE)
+        )],
+        table->thread_safe
+    );
 
     for (index = 0; index < TRANSPOSITION_CLUSTER_SIZE; ++index) {
         const TranspositionEntry *entry = &table->entries[bucket_start + index];
@@ -226,9 +242,12 @@ int probe_transposition_entry(
     }
 
     bucket_start = table_bucket_start(table, key);
-    TranspositionLock lock(table->locks[table_lock_index(
-        table, (uint64_t)(bucket_start / TRANSPOSITION_CLUSTER_SIZE)
-    )]);
+    TranspositionLock lock(
+        table->locks[table_lock_index(
+            table, (uint64_t)(bucket_start / TRANSPOSITION_CLUSTER_SIZE)
+        )],
+        table->thread_safe
+    );
     for (index = 0; index < TRANSPOSITION_CLUSTER_SIZE; ++index) {
         const TranspositionEntry *entry = &table->entries[bucket_start + index];
         if (entry->is_valid && entry->key == key) {
@@ -260,9 +279,12 @@ static void store_transposition_table_internal(
     }
 
     bucket_start = table_bucket_start(table, key);
-    TranspositionLock lock(table->locks[table_lock_index(
-        table, (uint64_t)(bucket_start / TRANSPOSITION_CLUSTER_SIZE)
-    )]);
+    TranspositionLock lock(
+        table->locks[table_lock_index(
+            table, (uint64_t)(bucket_start / TRANSPOSITION_CLUSTER_SIZE)
+        )],
+        table->thread_safe
+    );
 
     for (index = 0; index < TRANSPOSITION_CLUSTER_SIZE; ++index) {
         TranspositionEntry *entry = &table->entries[bucket_start + index];
@@ -358,7 +380,8 @@ int transposition_table_hashfull(const TranspositionTable *table) {
     for (index = 0; index < sample_count; ++index) {
         uint64_t bucket = (uint64_t)(index / TRANSPOSITION_CLUSTER_SIZE);
         TranspositionLock lock(
-            table->locks[table_lock_index(table, bucket)]
+            table->locks[table_lock_index(table, bucket)],
+            table->thread_safe
         );
         if (table->entries[index].is_valid &&
             table->entries[index].generation == table->generation) {
