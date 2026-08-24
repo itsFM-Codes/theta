@@ -10,7 +10,7 @@
 #include "src/eval/eval_params.h"
 #include "src/eval/eval_features.h"
 
-EngineConfig g_config = {6, 1, 1, 3, 3, 4, 105};
+EngineConfig g_config = {6, 1, 1, 4, 4, 3, 96};
 
 typedef struct ConfigIntTarget {
     const char *key;
@@ -109,10 +109,10 @@ void set_default_config(EngineConfig *config) {
     config->max_depth = 6;
     config->allow_draws = 1;
     config->threads = 1;
-    config->search_lmr_depth_start = 3;
-    config->search_lmr_move_start = 3;
-    config->search_null_move_base = 4;
-    config->search_static_futility_margin = 105;
+    config->search_lmr_depth_start = 4;
+    config->search_lmr_move_start = 4;
+    config->search_null_move_base = 3;
+    config->search_static_futility_margin = 96;
 }
 
 int load_config(const char *filename) {

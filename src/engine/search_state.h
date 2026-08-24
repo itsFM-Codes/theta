@@ -18,6 +18,8 @@ typedef struct SearchHeuristicTables {
     short pawn_history[2][PAWN_HISTORY_SIZE][PIECE_TYPE_KING + 1]
         [SQUARE_COUNT];
     short correction_history[CORRECTION_HISTORY_SIZE];
+    short continuation_correction_history[2][PIECE_TYPE_KING + 1]
+        [SQUARE_COUNT];
 } SearchHeuristicTables;
 
 // State shared by one engine instance.

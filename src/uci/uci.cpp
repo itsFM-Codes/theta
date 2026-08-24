@@ -513,23 +513,54 @@ static int search_parallel(
 
     workers.resize((size_t)thread_count);
     tasks.resize((size_t)thread_count);
+    int worker_hash_mb = base_state->transposition_table.size_mb /
+        thread_count;
+    if (worker_hash_mb < 1) {
+        worker_hash_mb = 1;
+    }
     for (index = 0; index < thread_count; ++index) {
         memset(&workers[index], 0, sizeof(workers[index]));
         clear_uci_move(&workers[index].best_move);
-        workers[index].state.transposition_table =
-            base_state->transposition_table;
-        workers[index].state.transposition_table.thread_safe = 1;
+        if (!initialize_transposition_table_mb(
+                &workers[index].state.transposition_table,
+                worker_hash_mb
+            )) {
+            for (int cleanup = 0; cleanup <= index; ++cleanup) {
+                free(workers[cleanup].state.heuristics);
+                workers[cleanup].state.heuristics = 0;
+                destroy_transposition_table(
+                    &workers[cleanup].state.transposition_table
+                );
+                workers[cleanup].initialized = 0;
+            }
+            {
+                Position fallback_position = *position;
+                return search_iterative_with_state_and_limits(
+                    base_state,
+                    &fallback_position,
+                    maximum_depth,
+                    base_limits,
+                    best_move,
+                    variation,
+                    completed_depth,
+                    callback,
+                    user_data
+                );
+            }
+        }
         workers[index].state.heuristics =
             (SearchHeuristicTables *)calloc(
                 1,
                 sizeof(SearchHeuristicTables)
             );
         if (workers[index].state.heuristics == 0) {
-            for (int cleanup = 0; cleanup < index; ++cleanup) {
-                if (workers[cleanup].initialized) {
-                    free(workers[cleanup].state.heuristics);
-                    workers[cleanup].state.heuristics = 0;
-                }
+            for (int cleanup = 0; cleanup <= index; ++cleanup) {
+                free(workers[cleanup].state.heuristics);
+                workers[cleanup].state.heuristics = 0;
+                destroy_transposition_table(
+                    &workers[cleanup].state.transposition_table
+                );
+                workers[cleanup].initialized = 0;
             }
             {
                 Position fallback_position = *position;
@@ -625,10 +656,10 @@ static int search_parallel(
 
     index = best_index >= 0 ? workers[best_index].score : 0;
     for (ParallelSearchWorker &worker : workers) {
-        if (worker.initialized) {
-            free(worker.state.heuristics);
-            worker.state.heuristics = 0;
-        }
+        free(worker.state.heuristics);
+        worker.state.heuristics = 0;
+        destroy_transposition_table(&worker.state.transposition_table);
+        worker.initialized = 0;
     }
     return index;
 }

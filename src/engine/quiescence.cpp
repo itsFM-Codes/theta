@@ -6,9 +6,16 @@
 #include "src/chess/movegen.h"
 #include "src/chess/zobrist.h"
 #include "src/eval/evaluation.h"
+#include "src/eval/nnue.h"
 
 #define DELTA_MARGIN 200
-#define QUIESCENCE_CHECK_DEPTH 1
+
+/* NNUE can afford one extra quiet-check ply without changing the HCE
+ * baseline.  The split is intentional: the longer qsearch was positive in
+ * NNUE matches but regressed the classical evaluator. */
+static int quiescence_check_depth(void) {
+    return nnue_is_enabled() ? 2 : 1;
+}
 
 static int piece_value(Piece piece) {
     switch (piece_type(piece)) {
@@ -138,7 +145,7 @@ static int quiescence_search_internal(
         position->side_to_move
     );
     generated_all_moves = in_check ||
-        quiescence_depth < QUIESCENCE_CHECK_DEPTH;
+        quiescence_depth < quiescence_check_depth();
     if (generated_all_moves) {
         if (context != 0) {
             context->move_generations++;
@@ -194,7 +201,11 @@ static int quiescence_search_internal(
             }
             stand_pat = search_evaluate_position(context, position, ply);
         } else {
-            stand_pat += correction_history_score(context, position) / 2;
+            stand_pat += correction_history_score(
+                context,
+                position,
+                ply
+            ) / 2;
         }
         best_score = stand_pat;
 
@@ -232,12 +243,16 @@ static int quiescence_search_internal(
             return 0;
         }
 
-        if (!in_check && quiescence_depth < QUIESCENCE_CHECK_DEPTH) {
-            gives_check = move_gives_check(position, move);
+        if (!in_check &&
+            quiescence_depth < quiescence_check_depth()) {
+            gives_check = move_picker.check_valid[index]
+                ? move_picker.gives_check[index]
+                : move_gives_check(position, move);
         }
 
         if (!in_check && !tactical_move) {
-            if (quiescence_depth >= QUIESCENCE_CHECK_DEPTH || !gives_check) {
+            if (quiescence_depth >= quiescence_check_depth() ||
+                !gives_check) {
                 continue;
             }
 
@@ -286,7 +301,7 @@ static int quiescence_search_internal(
                 &undo,
                 in_check,
                 pinned_pieces
-            )) {
+        )) {
             continue;
         }
         legal_move_count++;

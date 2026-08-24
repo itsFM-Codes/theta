@@ -33,6 +33,9 @@ $allFens = New-Object 'System.Collections.Generic.List[string]'
 $seen = New-Object 'System.Collections.Generic.HashSet[string]'
 foreach ($line in Get-Content -LiteralPath $inputFile) {
     $trimmed = $line.Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#")) {
+        continue
+    }
     $separator = $trimmed.IndexOfAny([char[]]" `t")
     if ($separator -lt 0) {
         continue

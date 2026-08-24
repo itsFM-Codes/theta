@@ -47,7 +47,7 @@ static int nnue_profile_value(
 static int effective_lmr_depth_start(void) {
     return nnue_profile_value(
         g_config.search_lmr_depth_start,
-        3,
+        4,
         2
     );
 }
@@ -55,7 +55,7 @@ static int effective_lmr_depth_start(void) {
 static int effective_lmr_move_start(void) {
     return nnue_profile_value(
         g_config.search_lmr_move_start,
-        3,
+        4,
         2
     );
 }
@@ -63,7 +63,7 @@ static int effective_lmr_move_start(void) {
 static int effective_null_move_base(void) {
     return nnue_profile_value(
         g_config.search_null_move_base,
-        4,
+        3,
         3
     );
 }
@@ -71,7 +71,7 @@ static int effective_null_move_base(void) {
 static int effective_static_futility_margin(void) {
     return nnue_profile_value(
         g_config.search_static_futility_margin,
-        105,
+        96,
         95
     );
 }
@@ -259,6 +259,8 @@ static void rotate_root_move_picker(MovePicker *picker, int offset) {
     int scores[MAX_MOVES];
     int see_scores[MAX_MOVES];
     unsigned char see_valid[MAX_MOVES];
+    unsigned char gives_check[MAX_MOVES];
+    unsigned char check_valid[MAX_MOVES];
     int count;
     int index;
 
@@ -282,12 +284,16 @@ static void rotate_root_move_picker(MovePicker *picker, int offset) {
         scores[index] = picker->scores[source];
         see_scores[index] = picker->see_scores[source];
         see_valid[index] = picker->see_valid[source];
+        gives_check[index] = picker->gives_check[source];
+        check_valid[index] = picker->check_valid[source];
     }
     for (index = 0; index < count; ++index) {
         picker->moves->moves[index] = moves[index];
         picker->scores[index] = scores[index];
         picker->see_scores[index] = see_scores[index];
         picker->see_valid[index] = see_valid[index];
+        picker->gives_check[index] = gives_check[index];
+        picker->check_valid[index] = check_valid[index];
     }
     picker->next_index = 0;
 }
@@ -740,7 +746,11 @@ static int corrected_static_evaluation(
     int ply,
     int raw_score
 ) {
-    int score = raw_score + correction_history_score(context, position) / 2;
+    int score = raw_score + correction_history_score(
+        context,
+        position,
+        ply
+    ) / 2;
 
     if (context != 0 && ply >= 0 && ply < MAX_SEARCH_PLY) {
         context->static_evaluations[ply] = score;
@@ -877,8 +887,6 @@ static int negamax(
     int legal_move_count = 0;
     int searched_move_count = 0;
     int best_score = -SEARCH_INFINITY;
-    Move singular_move;
-    int singular_extension = 0;
     TranspositionEntry table_entry = {};
     int index;
 
@@ -887,7 +895,6 @@ static int negamax(
     table_move.to = NO_SQUARE;
     table_move.promotion = PIECE_NONE;
     table_move.flags = MOVE_FLAG_NONE;
-    singular_move = table_move;
 
     search_record_node(context, ply, 0);
 
@@ -1291,56 +1298,8 @@ skip_null_cutoff:
         depth--;
     }
 
-    if (excluded_move == 0 && depth >= 6 + is_pv_node &&
-        is_valid_square(table_move.from) &&
-        is_valid_square(table_move.to)) {
-        if (table_entry.is_valid && table_entry.depth >= depth - 3 &&
-            table_entry.flag == TRANSPOSITION_LOWER_BOUND) {
-            PrincipalVariation singular_variation;
-            int entry_score = search_score_from_table(
-                table_entry.score,
-                ply
-            );
-            int singular_beta = entry_score -
-                (59 * depth) / 63;
-            int singular_score;
-
-            context->singular_attempts++;
-            singular_score = negamax(
-                position,
-                depth / 2,
-                singular_beta - 1,
-                singular_beta,
-                ply,
-                0,
-                0,
-                cut_node,
-                &singular_variation,
-                context,
-                &table_move
-            );
-            if (search_has_stopped(context)) {
-                return 0;
-            }
-            if (singular_score < singular_beta) {
-                singular_move = table_move;
-                singular_extension = 1;
-                if (singular_score < singular_beta - 2 * depth) {
-                    singular_extension++;
-                }
-                if (singular_score < singular_beta - 3 * depth) {
-                    singular_extension++;
-                }
-                context->singular_extensions++;
-            } else if (!is_pv_node && entry_score >= beta &&
-                       singular_score >= beta) {
-                return singular_score;
-            } else if (entry_score >= beta) {
-                singular_move = table_move;
-                singular_extension = -2;
-            }
-        }
-    }
+    /* Singular extension was screened independently and regressed the
+     * current search profile. Keep the TT move at the normal depth. */
 
     if (context != 0) {
         context->move_generations++;
@@ -1453,7 +1412,7 @@ skip_null_cutoff:
         if (depth <= 4 && !is_pv_node && !in_check && move_index > 0 &&
             !quiet_move && (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
             !gives_check &&
-            pruning_score + search_piece_value(undo.captured_piece) +
+                pruning_score + search_piece_value(undo.captured_piece) +
                 160 + 180 * depth + capture_history / 16 <= alpha) {
             if (context != 0) {
                 context->static_futility_prunes++;
@@ -1465,7 +1424,7 @@ skip_null_cutoff:
         if (depth <= 4 && !is_pv_node && !in_check && move_index > 0 &&
             !quiet_move && (move.flags & MOVE_FLAG_PROMOTION) == 0 &&
             !gives_check &&
-            see_score < -70 * depth - capture_history / 32) {
+             see_score < -70 * depth - capture_history / 32) {
             if (context != 0) {
                 context->see_prunes++;
             }
@@ -1559,11 +1518,6 @@ skip_null_cutoff:
                    context->line_moves[ply - 1].to == move.to &&
                    see_score >= 0 && ply < MAX_CHECK_EXTENSION_PLY) {
             search_depth++;
-        } else if (singular_extension &&
-                   move.from == singular_move.from &&
-                   move.to == singular_move.to &&
-                   move.promotion == singular_move.promotion) {
-            search_depth += singular_extension;
         }
 
         if (move_index == 0) {
@@ -1689,6 +1643,7 @@ skip_null_cutoff:
             record_correction_history(
                 context,
                 position,
+                ply,
                 best_score - raw_static_score
             );
         }

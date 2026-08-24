@@ -1,7 +1,5 @@
 #include "move_ordering.h"
 
-#include <algorithm>
-
 #include "static_exchange.h"
 
 #include "src/chess/movegen.h"
@@ -17,6 +15,8 @@
 #define LOSING_CAPTURE_SCORE 1500
 #define PAWN_HISTORY_WEIGHT 2
 #define CORRECTION_HISTORY_LIMIT 1024
+
+static const int CORRECTION_HISTORY_OFFSETS[2] = {2, 4};
 
 static unsigned int pawn_history_index(const Position *position) {
     uint64_t key;
@@ -241,43 +241,104 @@ int pawn_history_score(
 
 int correction_history_score(
     const SearchContext *context,
-    const Position *position
+    const Position *position,
+    int ply
 ) {
+    int score;
+    int index;
+
     if (context == 0 || context->shared_state == 0 ||
         context->shared_state->heuristics == 0 || position == 0) {
         return 0;
     }
 
-    return context->shared_state->heuristics
+    score = context->shared_state->heuristics
         ->correction_history[pawn_history_index(position)];
+    for (index = 0; index < 2; ++index) {
+        int previous_ply = ply - CORRECTION_HISTORY_OFFSETS[index];
+        Move previous_move;
+        PieceType previous_type;
+
+        if (previous_ply < 0 || previous_ply >= MAX_SEARCH_PLY) {
+            continue;
+        }
+        previous_move = context->line_moves[previous_ply];
+        previous_type = context->line_move_types[previous_ply];
+        if (!is_valid_square(previous_move.to) ||
+            previous_type == PIECE_TYPE_NONE ||
+            previous_type > PIECE_TYPE_KING) {
+            continue;
+        }
+        score += context->shared_state->heuristics
+            ->continuation_correction_history[index][previous_type]
+                [previous_move.to] * (index == 0 ? 130 : 70) / 128;
+    }
+    return score;
 }
 
-void record_correction_history(
-    SearchContext *context,
-    const Position *position,
-    int score_delta
-) {
-    short *score;
+static void update_correction_history_score(short *score, int bonus) {
     int updated;
 
-    if (context == 0 || context->shared_state == 0 ||
-        context->shared_state->heuristics == 0 || position == 0) {
+    if (score == 0) {
         return;
     }
-    if (score_delta > CORRECTION_HISTORY_LIMIT) {
-        score_delta = CORRECTION_HISTORY_LIMIT;
-    } else if (score_delta < -CORRECTION_HISTORY_LIMIT) {
-        score_delta = -CORRECTION_HISTORY_LIMIT;
+
+    if (bonus > CORRECTION_HISTORY_LIMIT) {
+        bonus = CORRECTION_HISTORY_LIMIT;
+    } else if (bonus < -CORRECTION_HISTORY_LIMIT) {
+        bonus = -CORRECTION_HISTORY_LIMIT;
     }
-    score = &context->shared_state->heuristics
-        ->correction_history[pawn_history_index(position)];
-    updated = *score + (score_delta - *score) / 8;
+    updated = *score + (bonus - *score) / 8;
     if (updated > CORRECTION_HISTORY_LIMIT) {
         updated = CORRECTION_HISTORY_LIMIT;
     } else if (updated < -CORRECTION_HISTORY_LIMIT) {
         updated = -CORRECTION_HISTORY_LIMIT;
     }
     *score = (short)updated;
+}
+
+void record_correction_history(
+    SearchContext *context,
+    const Position *position,
+    int ply,
+    int score_delta
+) {
+    int index;
+
+    if (context == 0 || context->shared_state == 0 ||
+        context->shared_state->heuristics == 0 || position == 0) {
+        return;
+    }
+
+    update_correction_history_score(
+        &context->shared_state->heuristics
+            ->correction_history[pawn_history_index(position)],
+        score_delta
+    );
+
+    for (index = 0; index < 2; ++index) {
+        int previous_ply = ply - CORRECTION_HISTORY_OFFSETS[index];
+        Move previous_move;
+        PieceType previous_type;
+        short *score;
+        int bonus;
+
+        if (previous_ply < 0 || previous_ply >= MAX_SEARCH_PLY) {
+            continue;
+        }
+        previous_move = context->line_moves[previous_ply];
+        previous_type = context->line_move_types[previous_ply];
+        if (!is_valid_square(previous_move.to) ||
+            previous_type == PIECE_TYPE_NONE ||
+            previous_type > PIECE_TYPE_KING) {
+            continue;
+        }
+        bonus = score_delta * (index == 0 ? 130 : 70) / 128;
+        score = &context->shared_state->heuristics
+            ->continuation_correction_history[index][previous_type]
+                [previous_move.to];
+        update_correction_history_score(score, bonus);
+    }
 }
 
 static int counter_move_score(
@@ -427,6 +488,8 @@ static int move_order_score(
     const Move *table_move,
     int see_score,
     int see_valid,
+    int gives_check,
+    int check_valid,
     const uint64_t *threat_by_lesser
 ) {
     Piece attacker;
@@ -448,7 +511,9 @@ static int move_order_score(
 
         attacker = position_piece_at(position, move.from);
 
-        if (order_checks && move_gives_check(position, move)) {
+        if (order_checks && (check_valid
+                ? gives_check
+                : move_gives_check(position, move))) {
             return CHECK_MOVE_SCORE;
         }
 
@@ -511,13 +576,12 @@ static int move_order_score(
 }
 
 static void sort_picker(MovePicker *picker) {
-    struct ScoredMove {
-        Move move;
-        int score;
-        int see_score;
-        unsigned char see_valid;
-        int original_index;
-    } scored[MAX_MOVES];
+    Move sorted_moves[MAX_MOVES];
+    int sorted_scores[MAX_MOVES];
+    int sorted_see_scores[MAX_MOVES];
+    unsigned char sorted_see_valid[MAX_MOVES];
+    unsigned char sorted_gives_check[MAX_MOVES];
+    unsigned char sorted_check_valid[MAX_MOVES];
     int index;
 
     if (picker == 0 || picker->moves == 0) {
@@ -525,29 +589,38 @@ static void sort_picker(MovePicker *picker) {
     }
 
     for (index = 0; index < picker->moves->count; ++index) {
-        scored[index].move = picker->moves->moves[index];
-        scored[index].score = picker->scores[index];
-        scored[index].see_score = picker->see_scores[index];
-        scored[index].see_valid = picker->see_valid[index];
-        scored[index].original_index = index;
+        int insert = index;
+        int score = picker->scores[index];
+        int see_score = picker->see_scores[index];
+        unsigned char see_valid = picker->see_valid[index];
+        unsigned char gives_check = picker->gives_check[index];
+        unsigned char check_valid = picker->check_valid[index];
+
+        while (insert > 0 && sorted_scores[insert - 1] < score) {
+            sorted_scores[insert] = sorted_scores[insert - 1];
+            sorted_moves[insert] = sorted_moves[insert - 1];
+            sorted_see_scores[insert] = sorted_see_scores[insert - 1];
+            sorted_see_valid[insert] = sorted_see_valid[insert - 1];
+            sorted_gives_check[insert] = sorted_gives_check[insert - 1];
+            sorted_check_valid[insert] = sorted_check_valid[insert - 1];
+            insert--;
+        }
+
+        sorted_scores[insert] = score;
+        sorted_moves[insert] = picker->moves->moves[index];
+        sorted_see_scores[insert] = see_score;
+        sorted_see_valid[insert] = see_valid;
+        sorted_gives_check[insert] = gives_check;
+        sorted_check_valid[insert] = check_valid;
     }
 
-    std::sort(
-        scored,
-        scored + picker->moves->count,
-        [](const ScoredMove &first, const ScoredMove &second) {
-            if (first.score != second.score) {
-                return first.score > second.score;
-            }
-            return first.original_index < second.original_index;
-        }
-    );
-
     for (index = 0; index < picker->moves->count; ++index) {
-        picker->scores[index] = scored[index].score;
-        picker->moves->moves[index] = scored[index].move;
-        picker->see_scores[index] = scored[index].see_score;
-        picker->see_valid[index] = scored[index].see_valid;
+        picker->scores[index] = sorted_scores[index];
+        picker->moves->moves[index] = sorted_moves[index];
+        picker->see_scores[index] = sorted_see_scores[index];
+        picker->see_valid[index] = sorted_see_valid[index];
+        picker->gives_check[index] = sorted_gives_check[index];
+        picker->check_valid[index] = sorted_check_valid[index];
     }
 }
 
@@ -607,8 +680,19 @@ void initialize_move_picker(
     }
 
     for (index = 0; index < moves->count; ++index) {
+        picker->gives_check[index] = 0;
+        picker->check_valid[index] = 0;
         picker->see_scores[index] = 0;
         picker->see_valid[index] = 0;
+        if (order_checks &&
+            (moves->moves[index].flags &
+             (MOVE_FLAG_CAPTURE | MOVE_FLAG_PROMOTION)) == 0) {
+            picker->gives_check[index] = (unsigned char)move_gives_check(
+                position,
+                moves->moves[index]
+            );
+            picker->check_valid[index] = 1;
+        }
         if (move_needs_see(position, moves->moves[index])) {
             picker->see_scores[index] = static_exchange_evaluation(
                 position,
@@ -625,6 +709,8 @@ void initialize_move_picker(
             table_move,
             picker->see_scores[index],
             picker->see_valid[index],
+            picker->gives_check[index],
+            picker->check_valid[index],
             picker->threat_by_lesser
         );
     }
@@ -694,7 +780,7 @@ void record_quiet_cutoff(
     }
 
     update_pawn_history_score(
-                    &context->shared_state->heuristics
+        &context->shared_state->heuristics
             ->pawn_history[color][pawn_history_index(position)]
                 [piece_type(position_piece_at(position, move.from))][move.to],
         bonus
@@ -716,7 +802,7 @@ void record_quiet_cutoff(
                 previous_type != PIECE_TYPE_NONE &&
                 moving_type != PIECE_TYPE_NONE) {
                 update_continuation_history_score(
-                &context->shared_state->heuristics
+                    &context->shared_state->heuristics
                         ->continuation_history[index][previous_type]
                             [previous_move.to][moving_type][move.to],
                     index == 0 ? bonus : index < 3 ? bonus / 2 : bonus / 4

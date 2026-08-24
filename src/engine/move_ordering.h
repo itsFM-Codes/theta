@@ -8,6 +8,8 @@ typedef struct MovePicker {
     int scores[MAX_MOVES];
     int see_scores[MAX_MOVES];
     unsigned char see_valid[MAX_MOVES];
+    unsigned char gives_check[MAX_MOVES];
+    unsigned char check_valid[MAX_MOVES];
     uint64_t threat_by_lesser[PIECE_TYPE_KING + 1];
     int next_index;
 } MovePicker;
@@ -46,13 +48,17 @@ int capture_history_score(
 
 int correction_history_score(
     const SearchContext *context,
-    const Position *position
+    const Position *position,
+    int ply
 );
 void record_correction_history(
     SearchContext *context,
     const Position *position,
+    int ply,
     int score_delta
 );
+
+
 
 void order_moves(
     Position *position,
