@@ -47,7 +47,7 @@ static int nnue_profile_value(
 static int effective_lmr_depth_start(void) {
     return nnue_profile_value(
         g_config.search_lmr_depth_start,
-        4,
+        3,
         2
     );
 }
@@ -55,7 +55,7 @@ static int effective_lmr_depth_start(void) {
 static int effective_lmr_move_start(void) {
     return nnue_profile_value(
         g_config.search_lmr_move_start,
-        4,
+        3,
         2
     );
 }
@@ -63,7 +63,7 @@ static int effective_lmr_move_start(void) {
 static int effective_null_move_base(void) {
     return nnue_profile_value(
         g_config.search_null_move_base,
-        3,
+        4,
         3
     );
 }
@@ -71,7 +71,7 @@ static int effective_null_move_base(void) {
 static int effective_static_futility_margin(void) {
     return nnue_profile_value(
         g_config.search_static_futility_margin,
-        96,
+        105,
         95
     );
 }
